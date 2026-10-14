@@ -74,7 +74,7 @@ function taskUpdateTrigger(taskName, run = execFile) {
  * The service. config: the parsed config.json; token: the GitHub token; configFile / envFile / adminFile: the
  * settings files (the admin page rewrites them in place); admin: { file, settings, hosts, trustProxy } turns the
  * admin page on; dataDir: FOUNDRY_DATA; stateDir: where repos/ and status.json live; foundryUrl: Foundry's address
- * for /api/status; updateTrigger: "Update now". fetchImpl / run / log / mailer / now are injected by the tests.
+ * for /api/status from FOUNDRY_URL (config.json's foundry.url, set on the admin page, wins); updateTrigger: "Update now". fetchImpl / run / log / mailer / now are injected by the tests.
  */
 function createApp({
   config,
@@ -101,6 +101,19 @@ function createApp({
   let currentToken = token;
   let owner = null; // the token's GitHub login once confirmed
   const github = createGithub({ fetchImpl });
+  // Foundry's address in use: the one saved on the admin page (config.json), else FOUNDRY_URL; '' = never ask.
+  const currentFoundryUrl = () => (currentConfig.foundry.url !== null ? currentConfig.foundry.url : foundryUrl);
+
+  /** The Foundry check of "Test setup" and the Foundry page: { status, message, world? }. */
+  async function checkFoundry(url = currentFoundryUrl()) {
+    if (!url) return { status: 'warn', message: 'no address set: active worlds cannot be detected (backups still run)' };
+    const f = await foundryStatus(url, fetchImpl);
+    if (!f.reachable) {
+      return { status: 'warn', message: `${url} did not answer /api/status (${f.problem}); active worlds cannot be detected (backups still run)` };
+    }
+    return { status: 'ok', world: f.active ? f.world : null,
+      message: f.active ? `reachable at ${url}, world "${f.world}" is active` : `reachable at ${url}, no world active` };
+  }
 
   async function mail(subject, message) {
     if (!adminFile) return log('notify: no admin.json, so nobody to e-mail');
@@ -110,7 +123,7 @@ function createApp({
   const backups = createBackups({
     dataDir,
     stateDir,
-    foundryUrl,
+    getFoundryUrl: currentFoundryUrl,
     gitBin,
     remoteUrl: remoteUrl || undefined,
     getConfig: () => currentConfig,
@@ -198,11 +211,9 @@ function createApp({
     } catch (err) {
       checks.push({ kind: 'state', name: 'State folder', status: 'bad', message: `${stateDir} is not writable (${err.code || err.message})` });
     }
-    if (foundryUrl) {
-      const f = await foundryStatus(foundryUrl, fetchImpl);
-      checks.push({ kind: 'foundry', name: 'Foundry', status: f.reachable ? 'ok' : 'warn',
-        message: f.reachable ? (f.active ? `reachable at ${foundryUrl}, world "${f.world}" is active` : `reachable at ${foundryUrl}, no world active`)
-          : `${foundryUrl} did not answer /api/status; active worlds cannot be detected (backups still run)` });
+    if (currentFoundryUrl()) {
+      const { status, message } = await checkFoundry();
+      checks.push({ kind: 'foundry', name: 'Foundry', status, message });
     }
     if (tokenResult.status === 'bad') return { token: tokenResult, checks };
     const tokenOwner = tokenResult.login || null;
@@ -325,7 +336,8 @@ function createApp({
     },
     githubToken,
     serviceUpdate,
-    paths: { dataDir, stateDir, foundryUrl },
+    foundry: { defaultUrl: foundryUrl, url: currentFoundryUrl, test: checkFoundry },
+    paths: { dataDir, stateDir },
     now: () => now().getTime(),
   });
 

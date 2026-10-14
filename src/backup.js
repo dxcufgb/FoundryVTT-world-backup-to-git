@@ -68,8 +68,8 @@ function gitDetail(result) {
 /**
  * dataDir: FOUNDRY_DATA; stateDir: writable folder for repos/ and status.json; getConfig() => the current config;
  * getToken() => the GitHub token in use; getOwner() => the token's GitHub login (null until known);
- * foundryUrl: where Foundry answers /api/status (optional); notify(subject, text) mails the recipients;
- * run / fetchImpl / now / log are injected for the tests.
+ * getFoundryUrl() => where Foundry answers /api/status ('' = never ask; default: the fixed foundryUrl);
+ * notify(subject, text) mails the recipients; run / fetchImpl / now / log are injected for the tests.
  */
 function createBackups({
   dataDir,
@@ -78,6 +78,7 @@ function createBackups({
   getToken,
   getOwner,
   foundryUrl = '',
+  getFoundryUrl = () => foundryUrl,
   gitBin = 'git',
   // the URL git pushes to; the tests point it at a local repository
   remoteUrl = (repo) => `https://github.com/${repo}.git`,
@@ -237,7 +238,7 @@ function createBackups({
     if (!world.readable) throw new BackupError(`cannot read the world folder (${world.problem})`);
     const s = worldStatus(world.id);
     const settings = effectiveSettings(getConfig(), world.id);
-    const foundry = await foundryStatus(foundryUrl, fetchImpl);
+    const foundry = await foundryStatus(getFoundryUrl(), fetchImpl);
     const active = foundry.active && foundry.world === world.id;
     if (active && settings.whenActive === 'skip') {
       return { skipped: `the world is active in Foundry (its settings say to wait)` };

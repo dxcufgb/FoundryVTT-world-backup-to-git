@@ -110,6 +110,11 @@ footer .footer-text { min-width: 0; }
   margin-bottom: 20px;
 }
 .narrow { max-width: 460px; }
+.centered { margin-left: auto; margin-right: auto; }
+/* logged out: the login card sits in the middle of the space below the header */
+body.logged-out main { display: flex; align-items: center; justify-content: center; }
+.login { width: 100%; margin: 0; }
+.login h2 { text-align: center; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .hint { color: var(--muted); margin: 4px 0 16px; }
 .empty { color: var(--muted); font-style: italic; }
@@ -179,6 +184,9 @@ fieldset small.hint { display: block; margin: 4px 0 0; }
 fieldset label.check { margin-bottom: 8px; }
 td a { color: var(--accent); }
 td.repo { white-space: nowrap; }
+th.check-col, td.check-col { width: 1%; text-align: center; white-space: nowrap; }
+td.check-col input { width: 18px; height: 18px; margin: 2px auto 0; cursor: pointer; }
+td.check-col input:disabled { cursor: default; }
 #github-form { margin-top: 20px; }
 td.repo code { word-break: normal; }
 .actions { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -200,7 +208,7 @@ td.repo code { word-break: normal; }
 .results .ok .mark { color: var(--ok); }
 .results .warn .mark { color: var(--warn); }
 .results .bad .mark { color: var(--danger); }
-#token-status { margin: 0 0 12px; }
+#token-status, #foundry-status { margin: 0 0 12px; }
 #toast {
   position: fixed;
   right: 20px;
@@ -232,6 +240,6 @@ summary { cursor: pointer; margin-bottom: 8px; color: var(--muted); }
   .card { padding: 16px; }
 }
 @media (max-width: 760px) {
-  #worlds th:nth-child(4), #worlds td:nth-child(4) { display: none; }
   #worlds th:nth-child(5), #worlds td:nth-child(5) { display: none; }
+  #worlds th:nth-child(6), #worlds td:nth-child(6) { display: none; }
 }

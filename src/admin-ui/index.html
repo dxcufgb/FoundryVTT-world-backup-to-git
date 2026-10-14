@@ -24,6 +24,7 @@
         </button>
         <div id="settings-menu" class="menu" role="menu" aria-labelledby="settings-button" hidden>
           <a role="menuitem" href="#/schedule">Schedule</a>
+          <a role="menuitem" href="#/foundry">Foundry</a>
           <a role="menuitem" href="#/github">GitHub</a>
           <a role="menuitem" href="#/notifications">Notifications</a>
           <a role="menuitem" href="#/password">Admin password</a>
@@ -36,7 +37,7 @@
   <div id="toast" role="status" aria-live="polite" hidden></div>
 
   <main>
-    <section id="login-view" class="card narrow" hidden>
+    <section id="login-view" class="card narrow login" hidden>
       <h2>Log in</h2>
       <form id="login-form">
         <label>Password <input type="password" name="password" autocomplete="current-password" required autofocus></label>
@@ -54,14 +55,14 @@
             <button type="button" id="rescan" class="secondary">Rescan</button>
           </div>
         </div>
-        <p class="hint" id="worlds-hint">Every world of the Foundry server is backed up to its own private GitHub repository
-          <a href="#/schedule" id="schedule-link">on the schedule</a>. The cogwheel of a row turns a world off, names its
-          repository or gives it a schedule of its own.</p>
+        <p class="hint" id="worlds-hint">Every checked world of the Foundry server is backed up to its own private GitHub
+          repository <a href="#/schedule" id="schedule-link">on the schedule</a>; clear a world's checkbox to stop backing
+          it up. The cogwheel of a row names its repository or gives it a schedule of its own.</p>
         <p class="error" id="worlds-problem" hidden></p>
         <div class="table-wrap">
           <table id="worlds">
             <thead>
-              <tr><th>World</th><th>Backed up</th><th>Last backup</th><th>Size</th><th>Repository</th><th class="actions-col">Actions</th></tr>
+              <tr><th class="check-col"><span title="Back this world up">Back up</span></th><th>World</th><th>Backed up</th><th>Last backup</th><th>Size</th><th>Repository</th><th class="actions-col">Actions</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -85,6 +86,27 @@
           </fieldset>
           <div class="buttons"><button type="submit">Save</button></div>
         </form>
+      </section>
+
+      <section class="card page" data-page="foundry" hidden>
+        <p class="back"><a href="#/">← Worlds</a></p>
+        <h2>Foundry</h2>
+        <p class="hint">Before a backup the service asks Foundry's <code>/api/status</code> which world is launched (see
+          the active-world rule on the <a href="#/schedule">Schedule</a> page). Enter the address Foundry answers on from
+          this machine, usually <code>http://localhost:30000</code>. Backups run without it; only the active-world check
+          needs it. <strong>Test</strong> asks the address in the field without saving it.</p>
+        <p id="foundry-status"></p>
+        <form id="foundry-form">
+          <label>Foundry address <input name="url" type="url" autocomplete="off" spellcheck="false" placeholder="http://localhost:30000">
+            <small id="foundry-url-hint"></small></label>
+          <label class="check"><input type="checkbox" name="off"> Do not ask Foundry (no active-world check)</label>
+          <div class="buttons">
+            <button type="submit">Save</button>
+            <button type="button" id="foundry-test" class="secondary">Test</button>
+            <button type="button" id="foundry-reset" class="secondary" hidden>Use the installer's address</button>
+          </div>
+        </form>
+        <ul id="foundry-results" class="results" hidden></ul>
       </section>
 
       <section class="card page" data-page="github" hidden>
@@ -156,7 +178,7 @@
         </form>
       </section>
 
-      <section class="card narrow page" data-page="password" hidden>
+      <section class="card narrow centered page" data-page="password" hidden>
         <p class="back"><a href="#/">← Worlds</a></p>
         <h2>Admin password</h2>
         <form id="password-form">

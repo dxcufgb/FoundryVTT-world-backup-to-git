@@ -251,8 +251,13 @@ test('an active world is skipped or backed up with a note, as its settings say',
   assert.equal(t2.backups.statusOf('beta').wasActive, true);
   assert.match(git(t2.remote('octo/foundry-world-beta'), 'log', '-1', '--format=%b', 'main'), /The world was active in Foundry during the backup/);
   assert.deepEqual(await foundryStatus('http://foundry.test:30000', active), { reachable: true, active: true, world: 'beta' });
-  assert.deepEqual(await foundryStatus('', active), { reachable: false, active: false, world: null });
-  assert.deepEqual(await foundryStatus('http://down.test', async () => { throw new Error('ECONNREFUSED'); }), { reachable: false, active: false, world: null });
+  assert.deepEqual(await foundryStatus('', active), { reachable: false, active: false, world: null, problem: 'no Foundry address set' });
+  assert.deepEqual(await foundryStatus('http://down.test', async () => { throw new Error('ECONNREFUSED'); }),
+    { reachable: false, active: false, world: null, problem: 'cannot connect' });
+  const refused = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+  assert.equal((await foundryStatus('http://down.test', async () => { throw refused; })).problem, 'cannot connect (ECONNREFUSED)');
+  assert.equal((await foundryStatus('http://web.test', async () => new Response('nope', { status: 404 }))).problem, 'HTTP 404');
+  assert.match((await foundryStatus('http://web.test', async () => new Response('<html>'))).problem, /not JSON/);
 });
 
 test('worlds are listed with their effective settings; forget removes status and local copy; git is checked', async () => {

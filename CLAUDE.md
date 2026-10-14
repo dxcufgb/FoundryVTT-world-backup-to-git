@@ -18,7 +18,8 @@ the worlds table replaces the proxy's modules table.
   directly and opens the admin listener (`createAdminServer(tls)`: HTTPS, a plain-HTTP first byte gets a 301 to
   https://, `/` → `/_admin/`, nothing else is served).
 - `src/config.js` – `config.json`: schedule (`hourly`/`daily`/`weekly`), `github` (`repoPrefix`, `createRepos`),
-  `whenActive`, per-world settings (`enabled`, `repo`, `schedule`, `whenActive`; unlisted worlds get the defaults).
+  `whenActive`, `foundry.url` (Foundry's address from the admin page; unset = `FOUNDRY_URL`, `""` = off), per-world
+  settings (`enabled`, `repo`, `schedule`, `whenActive`; unlisted worlds get the defaults).
   `parseConfig`, `serializeConfig` (only non-default values are written), `worldRepo`, `effectiveSettings`.
 - `src/worlds.js` – finds the worlds (`FOUNDRY_DATA`, its `Data` or `Data/worlds` folder; every folder with a
   `world.json`), reads title/system/version, sums folder sizes (symlinks not followed).
@@ -31,15 +32,16 @@ the worlds table replaces the proxy's modules table.
   is newer than its `lastScheduled` is queued (a missed slot runs when the machine is back; a fresh install backs
   everything up once).
 - `src/github.js` – `checkToken` (`GET /user`, expiry header), `repoInfo`, `createRepo` (private, under the token's
-  account); `foundryStatus` (`GET <FOUNDRY_URL>/api/status`: the active world).
+  account); `foundryStatus` (`GET <foundry address>/api/status`: the active world, or why Foundry did not answer).
 - `src/admin.js` – the admin page (`/_admin/`, UI files in `src/admin-ui/`: one HTML page whose views are picked by the
-  URL fragment, `#/` worlds and `#/schedule`, `#/github`, `#/notifications`, `#/password` from the cogwheel menu; the
-  footer holds the version and the update buttons; a per-row cogwheel opens the world dialog): JSON API `GET state`,
-  `POST worlds/rescan`, `PUT worlds/<id>`, `POST worlds/<id>/backup`, `DELETE worlds/<id>` (forget), `PUT settings`,
-  `PUT token` (format check, GitHub must accept it, then the `GITHUB_TOKEN` line of `env` is rewritten in place),
-  `POST setup-test`, `PUT notify`, `POST notify/test`, `PUT password`, `GET`/`POST update`. Settings in `admin.json`
-  (scrypt `passwordHash` + `notify`), the backup settings in `config.json`. CLI: `setup FILE` (installers; secrets
-  via `FOUNDRY_BACKUP_*` env), `check FILE`.
+  URL fragment, `#/` worlds and `#/schedule`, `#/foundry`, `#/github`, `#/notifications`, `#/password` from the
+  cogwheel menu; the footer holds the version and the update buttons; a per-row checkbox turns a world on/off, a
+  per-row cogwheel opens the world dialog): JSON API `GET state`, `POST worlds/rescan`, `PUT worlds/<id>`,
+  `POST worlds/<id>/backup`, `DELETE worlds/<id>` (forget), `PUT settings`, `POST foundry-test` (Foundry's
+  `/api/status` at a typed or the saved address), `PUT token` (format check, GitHub must accept it, then the
+  `GITHUB_TOKEN` line of `env` is rewritten in place), `POST setup-test`, `PUT notify`, `POST notify/test`,
+  `PUT password`, `GET`/`POST update`. Settings in `admin.json` (scrypt `passwordHash` + `notify`), the backup settings
+  in `config.json`. CLI: `setup FILE` (installers; secrets via `FOUNDRY_BACKUP_*` env), `check FILE`.
 - `src/mailer.js` – minimal SMTP client (STARTTLS / TLS / plain relay, AUTH PLAIN/LOGIN only over TLS).
   `src/notify.js` – `--service-env FILE --subject --message`: mails the `admin.json` recipients; used by the service
   and the auto-update scripts. `src/selfsigned.js` – ECDSA P-256 self-signed certificate built with `node:crypto`.

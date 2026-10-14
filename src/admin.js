@@ -27,7 +27,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { promisify } = require('node:util');
 const { sendMail, isEmail, smtpProblem } = require('./mailer.js');
-const { ConfigError, WORLD_ID_RE } = require('./config.js');
+const { ConfigError, WORLD_ID_RE, cleanFoundryUrl } = require('./config.js');
 
 const scrypt = promisify(crypto.scrypt);
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -337,7 +337,9 @@ function hostOf(value) {
  *     save(token)                               writes it to file and switches the service over
  *     test(token) => { token, checks }          the token, git, the data folder, Foundry and every world's repository
  *   serviceUpdate: { version, info(), problem(), request() } – "Update now" only asks the root/SYSTEM updater to run.
- *   paths: { dataDir, stateDir, foundryUrl } shown on the page.
+ *   foundry: { defaultUrl, url(), test(url) } – Foundry's address from FOUNDRY_URL, the one in use, and its check
+ *     ({ status, message }).
+ *   paths: { dataDir, stateDir } shown on the page.
  * Returns { handles(pathname), handle(req, res, pathname) }.
  */
 function createAdmin({
@@ -349,6 +351,7 @@ function createAdmin({
   saveConfig,
   githubToken,
   serviceUpdate,
+  foundry,
   paths = {},
   extraHosts = [],
   trustProxy = false,
@@ -454,7 +457,13 @@ function createAdmin({
     return {
       csrf,
       ...worldsView({ fresh }),
-      settings: { schedule: config.schedule, github: config.github, whenActive: config.whenActive },
+      settings: {
+        schedule: config.schedule,
+        github: config.github,
+        whenActive: config.whenActive,
+        // url: the saved one (null = FOUNDRY_URL applies); inUse: the address asked; defaultUrl: FOUNDRY_URL
+        foundry: { url: config.foundry.url, inUse: foundry ? foundry.url() : '', defaultUrl: foundry ? foundry.defaultUrl : '' },
+      },
       notify: notifyView(),
       token: tokenView(),
       version: serviceUpdate ? serviceUpdate.version : null,
@@ -466,7 +475,8 @@ function createAdmin({
   /** The config.json that results from a change, validated and written. */
   function applyConfig(mutate, what) {
     const config = getConfig();
-    const raw = JSON.parse(JSON.stringify({ schedule: config.schedule, github: config.github, whenActive: config.whenActive, worlds: config.worlds }));
+    const raw = JSON.parse(JSON.stringify({ schedule: config.schedule, github: config.github, whenActive: config.whenActive,
+      foundry: config.foundry, worlds: config.worlds }));
     mutate(raw);
     try {
       saveConfig(raw);
@@ -588,7 +598,8 @@ function createAdmin({
         if (body.schedule !== undefined) raw.schedule = body.schedule;
         if (body.github !== undefined) raw.github = body.github;
         if (body.whenActive !== undefined) raw.whenActive = body.whenActive;
-      }, 'schedule / GitHub settings changed');
+        if (body.foundry !== undefined) raw.foundry = body.foundry;
+      }, body.foundry !== undefined ? 'Foundry settings changed' : 'schedule / GitHub settings changed');
       return sendJson(res, 200, state(s.csrf));
     }
 
@@ -656,6 +667,16 @@ function createAdmin({
       const bad = result.checks.filter((c) => c.status === 'bad').length;
       log(`admin: setup test (${typed ? 'typed' : 'saved'} token): token ${result.token.status}, ${bad} problem(s) in ${result.checks.length} check(s)`);
       return sendJson(res, 200, { tested: typed ? 'typed' : 'saved', ...result });
+    }
+
+    if (route === '/api/foundry-test' && method === 'POST') {
+      if (!foundry) throw new HttpError(404, 'not found');
+      // An address typed on the page is tested without saving it; without one, the address in use.
+      const url = cleanFoundryUrl(body.url, (msg) => new HttpError(400, msg), 'the address');
+      const tested = url ? 'typed' : 'saved';
+      const result = await foundry.test(url || undefined);
+      log(`admin: Foundry test (${tested} address): ${result.status}`);
+      return sendJson(res, 200, { tested, ...result });
     }
 
     if (route === '/api/update' && method === 'GET') {

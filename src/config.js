@@ -8,6 +8,7 @@
 //     "schedule": { "frequency": "daily", "time": "04:00", "weekday": 0, "everyHours": 6 },
 //     "github": { "repoPrefix": "foundry-world-", "createRepos": true },
 //     "whenActive": "backup",
+//     "foundry": { "url": "http://localhost:30000" },
 //     "worlds": {
 //       "my-world": { "enabled": true, "repo": "owner/name", "schedule": null, "whenActive": "" }
 //     }
@@ -17,7 +18,8 @@
 // Sunday ... 6 = Saturday, at time); times are local. whenActive: what to do when Foundry has the world launched at
 // backup time, "backup" (back it up anyway, noted in the commit) or "skip" (wait for the next run). A world's
 // "schedule" or "whenActive" overrides the global one; "" / null means "use the global setting"; "repo" ""
-// means <token owner>/<repoPrefix><world id>.
+// means <token owner>/<repoPrefix><world id>. foundry.url: where Foundry answers /api/status (which world is active);
+// absent / null = FOUNDRY_URL from the environment, "" = never ask.
 
 const fs = require('node:fs');
 
@@ -28,6 +30,7 @@ const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]{1,100}$/;
 const REPO_NAME_RE = /^[A-Za-z0-9_.-]{1,100}$/;
 const PREFIX_RE = /^[A-Za-z0-9_.-]{0,60}$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const MAX_URL_LENGTH = 500;
 const MAX_WORLDS = 500;
 
 class ConfigError extends Error {}
@@ -41,6 +44,7 @@ function defaultConfig() {
     schedule: defaultSchedule(),
     github: { repoPrefix: 'foundry-world-', createRepos: true },
     whenActive: 'backup',
+    foundry: { url: null },
     worlds: Object.create(null),
   };
 }
@@ -86,6 +90,28 @@ function cleanSchedule(raw, make, what = '"schedule"') {
   return out;
 }
 
+/**
+ * Validates Foundry's address: null / undefined = not set (FOUNDRY_URL applies), "" = off, otherwise an http(s) URL
+ * without user name or password. Returns the trimmed URL, '' or null; throws make(message).
+ */
+function cleanFoundryUrl(raw, make, what = '"foundry": url') {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string') throw make(`${what} must be a string`);
+  const url = raw.trim();
+  if (url === '') return '';
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw make(`${what} is not a valid address (e.g. http://localhost:30000)`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw make(`${what} must start with http:// or https://`);
+  if (parsed.username || parsed.password) throw make(`${what} must not contain a user name or password`);
+  if (parsed.search || parsed.hash) throw make(`${what} must not contain "?" or "#"`);
+  if (url.length > MAX_URL_LENGTH) throw make(`${what} is too long (at most ${MAX_URL_LENGTH} characters)`);
+  return url;
+}
+
 /** Validates one world's settings; "" / null / undefined fields mean "use the global setting". */
 function cleanWorld(id, raw, make) {
   const what = `world "${id}"`;
@@ -109,7 +135,7 @@ function cleanWorld(id, raw, make) {
   return out;
 }
 
-/** Parses config.json text into { schedule, github, whenActive, worlds }; throws ConfigError on anything off. */
+/** Parses config.json text into { schedule, github, whenActive, foundry, worlds }; throws ConfigError on anything off. */
 function parseConfig(text, source = 'config') {
   const make = (msg) => new ConfigError(`${source}: ${msg}`);
   let raw;
@@ -119,7 +145,7 @@ function parseConfig(text, source = 'config') {
     throw make(`not valid JSON (${err.message})`);
   }
   if (!isObject(raw)) throw make('top level must be an object');
-  knownKeys(raw, ['schedule', 'github', 'whenActive', 'worlds'], make, 'config');
+  knownKeys(raw, ['schedule', 'github', 'whenActive', 'foundry', 'worlds'], make, 'config');
   const out = defaultConfig();
   out.schedule = cleanSchedule(raw.schedule, make);
   if (raw.github !== undefined) {
@@ -139,6 +165,11 @@ function parseConfig(text, source = 'config') {
   if (raw.whenActive !== undefined) {
     if (!WHEN_ACTIVE.has(raw.whenActive)) throw make('whenActive must be backup or skip');
     out.whenActive = raw.whenActive;
+  }
+  if (raw.foundry !== undefined && raw.foundry !== null) {
+    if (!isObject(raw.foundry)) throw make('"foundry" must be an object');
+    knownKeys(raw.foundry, ['url'], make, '"foundry"');
+    out.foundry.url = cleanFoundryUrl(raw.foundry.url, make);
   }
   if (raw.worlds !== undefined) {
     if (!isObject(raw.worlds)) throw make('"worlds" must be an object mapping world ids to their settings');
@@ -174,7 +205,9 @@ function serializeConfig(config) {
     if (w.whenActive) entry.whenActive = w.whenActive;
     if (Object.keys(entry).length) worlds[id] = entry;
   }
-  const out = { schedule: config.schedule, github: config.github, whenActive: config.whenActive, worlds };
+  const out = { schedule: config.schedule, github: config.github, whenActive: config.whenActive };
+  if (config.foundry && config.foundry.url !== null) out.foundry = { url: config.foundry.url };
+  out.worlds = worlds;
   return `${JSON.stringify(out, null, 2)}\n`;
 }
 
@@ -209,6 +242,7 @@ module.exports = {
   defaultSchedule,
   defaultWorld,
   cleanSchedule,
+  cleanFoundryUrl,
   worldSettings,
   worldRepo,
   effectiveSettings,
