@@ -182,8 +182,8 @@ jobs:
           sudo test -f /var/lib/foundry-world-backup/repos/ci-world/HEAD
           sudo test -f /var/lib/foundry-world-backup/status.json
           sudo test ! -e /home/foundry/foundrydata/Data/worlds/ci-world/.git
-          ! sudo grep -r "$FOUNDRY_BACKUP_GITHUB_TOKEN" /var/lib/foundry-world-backup/status.json
-          ! sudo journalctl -u foundry-world-backup --no-pager | grep -q "$FOUNDRY_BACKUP_GITHUB_TOKEN"
+          if sudo grep -q "$FOUNDRY_BACKUP_GITHUB_TOKEN" /var/lib/foundry-world-backup/status.json; then echo "token in status.json"; exit 1; fi
+          if sudo journalctl -u foundry-world-backup --no-pager | grep -q "$FOUNDRY_BACKUP_GITHUB_TOKEN"; then echo "token in the log"; exit 1; fi
           # "Update now": the request file starts the root update service through the path unit (the update
           # itself fails here: the token is fake)
           systemctl is-active foundry-world-backup-update-now.path
