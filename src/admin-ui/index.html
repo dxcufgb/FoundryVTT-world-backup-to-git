@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Foundry World Backup</title>
+  <link rel="stylesheet" href="/_admin/app.css">
+  <script src="/_admin/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1><a href="#/" id="home-link">Foundry World Backup <span class="sub">administration</span></a></h1>
+    <nav class="top-actions" id="top-actions" hidden aria-label="Settings and session">
+      <div class="menu-wrap">
+        <button type="button" id="settings-button" class="icon-button secondary" aria-haspopup="menu"
+          aria-expanded="false" aria-controls="settings-menu" aria-label="Settings" title="Settings">
+          <!-- gear icon: Feather Icons (MIT) -->
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+        <div id="settings-menu" class="menu" role="menu" aria-labelledby="settings-button" hidden>
+          <a role="menuitem" href="#/schedule">Schedule</a>
+          <a role="menuitem" href="#/github">GitHub</a>
+          <a role="menuitem" href="#/notifications">Notifications</a>
+          <a role="menuitem" href="#/password">Admin password</a>
+        </div>
+      </div>
+      <button type="button" id="logout" class="secondary">Log out</button>
+    </nav>
+  </header>
+
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+
+  <main>
+    <section id="login-view" class="card narrow" hidden>
+      <h2>Log in</h2>
+      <form id="login-form">
+        <label>Password <input type="password" name="password" autocomplete="current-password" required autofocus></label>
+        <p class="error" id="login-error" hidden></p>
+        <button type="submit">Log in</button>
+      </form>
+    </section>
+
+    <div id="app-view" hidden>
+      <section class="card page" data-page="worlds">
+        <div class="section-head">
+          <h2>Worlds</h2>
+          <div class="buttons">
+            <button type="button" id="backup-all" class="secondary">Back up all now</button>
+            <button type="button" id="rescan" class="secondary">Rescan</button>
+          </div>
+        </div>
+        <p class="hint" id="worlds-hint">Every world of the Foundry server is backed up to its own private GitHub repository
+          <a href="#/schedule" id="schedule-link">on the schedule</a>. The cogwheel of a row turns a world off, names its
+          repository or gives it a schedule of its own.</p>
+        <p class="error" id="worlds-problem" hidden></p>
+        <div class="table-wrap">
+          <table id="worlds">
+            <thead>
+              <tr><th>World</th><th>Backed up</th><th>Last backup</th><th>Size</th><th>Repository</th><th class="actions-col">Actions</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="no-worlds" class="empty" hidden>No worlds found in the Foundry data folder.</p>
+      </section>
+
+      <section class="card page" data-page="schedule" hidden>
+        <p class="back"><a href="#/">← Worlds</a></p>
+        <h2>Schedule</h2>
+        <p class="hint">When every world is backed up (local time of this machine). A world can have a schedule of its
+          own (its cogwheel). A slot missed while the machine was off runs as soon as the service is back.</p>
+        <form id="schedule-form">
+          <div class="schedule-fields" data-schedule="global"></div>
+          <fieldset>
+            <legend>While a world is active in Foundry</legend>
+            <label class="check"><input type="radio" name="whenActive" value="backup"> Back it up anyway (noted in the commit)</label>
+            <label class="check"><input type="radio" name="whenActive" value="skip"> Wait for the next run</label>
+            <small class="hint">Foundry's <code>/api/status</code> says which world is launched. Backups of a launched world are
+              consistent as long as nobody is changing it at that moment.</small>
+          </fieldset>
+          <div class="buttons"><button type="submit">Save</button></div>
+        </form>
+      </section>
+
+      <section class="card page" data-page="github" hidden>
+        <p class="back"><a href="#/">← Worlds</a></p>
+        <h2>GitHub</h2>
+        <p class="hint">The service pushes with this token and creates a private repository for a world that has none
+          yet. It is never shown here. Before it expires, create a new one on GitHub, paste it below and save it: it is
+          used at once. <strong>Test setup</strong> checks the token, git, the data folder, Foundry and every world's
+          repository; with a token in the field it tests that one without saving it.</p>
+        <p id="token-status"></p>
+        <form id="token-form">
+          <label>New token <input type="password" name="token" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
+          <div class="buttons">
+            <button type="submit" id="token-save">Save token</button>
+            <button type="button" id="setup-test" class="secondary">Test setup</button>
+          </div>
+        </form>
+        <ul id="setup-results" class="results" hidden></ul>
+        <form id="github-form">
+          <fieldset>
+            <legend>Repositories</legend>
+            <label>Name prefix <input name="repoPrefix" pattern="[A-Za-z0-9_.\-]{0,60}" placeholder="foundry-world-">
+              <small>A world's repository is <code>&lt;token owner&gt;/&lt;prefix&gt;&lt;world id&gt;</code> unless its cogwheel names another one.</small></label>
+            <label class="check"><input type="checkbox" name="createRepos"> Create a missing repository (private) on the first backup</label>
+            <small class="hint">Creating needs a token with <em>Administration: read and write</em> on all repositories of its account;
+              pushing needs <em>Contents: read and write</em> on the world repositories.</small>
+          </fieldset>
+          <div class="buttons"><button type="submit">Save</button></div>
+        </form>
+      </section>
+
+      <section class="card page" data-page="notifications" hidden>
+        <p class="back"><a href="#/">← Worlds</a></p>
+        <h2>Notifications</h2>
+        <p class="hint">E-mails go to every address below when a backup fails (and once more when it works again), when
+          the daily check finds a problem with the GitHub token, and when the service updates itself (automatic
+          updates are turned on with the installer).</p>
+        <form id="notify-form">
+          <fieldset>
+            <legend>Recipients</legend>
+            <ul id="recipients" class="chips"></ul>
+            <div class="inline">
+              <input type="email" id="recipient-input" placeholder="name@example.com" aria-label="E-mail address to add">
+              <button type="button" id="recipient-add" class="secondary">Add address</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Mail server (SMTP)</legend>
+            <div class="grid">
+              <label>Server <input name="host" placeholder="smtp.example.com" autocomplete="off"></label>
+              <label>Port <input name="port" type="number" min="1" max="65535" value="587"></label>
+              <label>Security
+                <select name="security">
+                  <option value="starttls">STARTTLS (usually port 587)</option>
+                  <option value="tls">TLS (usually port 465)</option>
+                  <option value="none">None (local relay, no login)</option>
+                </select>
+              </label>
+              <label>Sender address <input name="from" type="email" placeholder="backup@example.com"></label>
+              <label>User name <input name="user" autocomplete="off"></label>
+              <label>Password <input name="password" type="password" autocomplete="new-password" placeholder="(unchanged)"></label>
+            </div>
+            <label class="check" id="clear-password-row" hidden><input type="checkbox" name="clearPassword"> Remove the stored password</label>
+          </fieldset>
+          <div class="buttons">
+            <button type="submit">Save</button>
+            <button type="button" id="notify-test" class="secondary">Send test e-mail</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card narrow page" data-page="password" hidden>
+        <p class="back"><a href="#/">← Worlds</a></p>
+        <h2>Admin password</h2>
+        <form id="password-form">
+          <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+          <label>New password <input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+          <label>Repeat new password <input type="password" name="repeat" autocomplete="new-password" minlength="8" required></label>
+          <button type="submit">Change password</button>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <footer id="app-footer" hidden>
+    <div class="footer-text">
+      <p id="version-status"></p>
+      <p id="version-note" class="small" hidden></p>
+    </div>
+    <div class="buttons">
+      <button type="button" id="update-check" class="secondary small">Check for update</button>
+      <button type="button" id="update-now" class="small"
+        title="Installs the latest release now with the installer's own updater: only a newer, checksum-verified release; a failed update puts the previous version back">Update now</button>
+    </div>
+  </footer>
+
+  <dialog id="world-dialog">
+    <form id="world-form" method="dialog">
+      <h2 id="world-dialog-title">World settings</h2>
+      <p class="hint" id="world-dialog-info"></p>
+      <label class="check"><input type="checkbox" name="enabled"> Back this world up</label>
+      <label>Repository <input name="repo" pattern="[A-Za-z0-9][A-Za-z0-9\-]{0,38}/[A-Za-z0-9_.\-]{1,100}" placeholder="owner/name">
+        <small id="world-repo-hint">Empty = the default name.</small></label>
+      <fieldset>
+        <legend>Schedule</legend>
+        <label class="check"><input type="radio" name="scheduleMode" value="global"> The global schedule</label>
+        <label class="check"><input type="radio" name="scheduleMode" value="custom"> Its own schedule</label>
+        <div class="schedule-fields" data-schedule="world" hidden></div>
+      </fieldset>
+      <fieldset>
+        <legend>While the world is active in Foundry</legend>
+        <label class="check"><input type="radio" name="whenActive" value=""> The global setting</label>
+        <label class="check"><input type="radio" name="whenActive" value="backup"> Back it up anyway</label>
+        <label class="check"><input type="radio" name="whenActive" value="skip"> Wait for the next run</label>
+      </fieldset>
+      <p class="error" id="world-error" hidden></p>
+      <div class="buttons">
+        <button type="submit" value="save">Save</button>
+        <button type="button" class="secondary" id="world-cancel">Cancel</button>
+        <button type="button" class="danger" id="world-forget" hidden title="Remove the settings, the status and the local git copy of a world whose folder is gone; the GitHub repository stays">Forget world</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

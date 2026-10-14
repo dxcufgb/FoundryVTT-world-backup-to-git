@@ -1,0 +1,16 @@
+# Keeps the GitHub Actions used by the workflows up to date (one grouped PR a week).
+# The service has no npm dependencies; add an npm entry here if it ever gets some.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

@@ -1,0 +1,285 @@
+# Runs on every push and pull request, and as the "ci" job of release.yml (workflow_call) before anything is published:
+#   - the unit tests (node --test) on every supported Node version
+#   - a syntax check of the server, its modules and the admin page script
+#   - shellcheck on the Linux scripts
+#   - PSScriptAnalyzer and a parse check on the Windows PowerShell scripts
+#   - a real run of install.sh on the Ubuntu runner (systemd) and of the Inno Setup installer on the Windows runner
+# The service has no npm dependencies, so there is nothing to install.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# github.workflow is the caller's name when release.yml calls this file, so a release's CI run and a push's CI run on
+# the same ref never cancel each other
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the event's commit, not a ref that can move during the run (a release's tag)
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - name: Entry points parse
+        run: |
+          for f in src/*.js src/admin-ui/app.js; do node --check "$f"; done
+
+      - name: Unit tests
+        run: npm test
+
+  shell:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the event's commit, not a ref that can move during the run (a release's tag)
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Shellcheck the scripts
+        run: shellcheck install.sh scripts/*.sh
+
+  powershell:
+    name: PSScriptAnalyzer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the event's commit, not a ref that can move during the run (a release's tag)
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      # PSScriptAnalyzer ships with the runner image; the scripts themselves target Windows PowerShell 5.1.
+      - name: Analyze the Windows scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($file in Get-ChildItem scripts/*.ps1, packaging/windows/*.ps1) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Output "::error file=$($file.Name)::$_" }; $failed = $true }
+          }
+          $results = 'scripts', 'packaging' | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Severity Warning, Error }
+          $results | Format-Table -AutoSize | Out-String -Width 200 | Write-Output
+          if ($results -or $failed) { exit 1 }
+
+  linux-install:
+    name: install.sh (systemd)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Fake token: the service only has to start and list the worlds (a backup would fail at GitHub).
+      FOUNDRY_BACKUP_GITHUB_TOKEN: github_pat_ci_not_a_real_token
+      # Not a secret: a throwaway password for the admin page of this test install.
+      FOUNDRY_BACKUP_ADMIN_PASSWORD: ci-admin-password
+      FOUNDRY_BACKUP_FOUNDRY_URL: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the event's commit, not a ref that can move during the run (a release's tag)
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: A Foundry data folder owned by another user, with one world (mode 700, like a real one)
+        run: |
+          sudo apt-get install -y -q acl >/dev/null
+          sudo useradd --system --create-home --home-dir /home/foundry foundry
+          sudo -u foundry mkdir -p /home/foundry/foundrydata/Data/worlds/ci-world/packs
+          echo '{"title":"CI World","system":"dnd5e"}' | sudo -u foundry tee /home/foundry/foundrydata/Data/worlds/ci-world/world.json >/dev/null
+          echo actors | sudo -u foundry tee /home/foundry/foundrydata/Data/worlds/ci-world/packs/actors.ldb >/dev/null
+          sudo chmod 700 /home/foundry /home/foundry/foundrydata
+
+      - name: Install with the system Node.js
+        run: sudo --preserve-env=FOUNDRY_BACKUP_GITHUB_TOKEN,FOUNDRY_BACKUP_ADMIN_PASSWORD,FOUNDRY_BACKUP_FOUNDRY_URL ./install.sh --yes --foundry-data /home/foundry/foundrydata
+
+      - name: Service answers on 8484 over HTTPS and lists the world
+        run: |
+          code=000
+          for _ in $(seq 1 15); do
+            code="$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8484/_admin/ || true)"
+            [ "$code" = 200 ] && break
+            sleep 1
+          done
+          systemctl is-active foundry-world-backup
+          test "$code" = 200
+          test "$(sudo stat -c '%a %U' /etc/foundry-world-backup/env)" = "600 foundry-backup"
+          test "$(sudo stat -c '%a %U' /etc/foundry-world-backup/admin.json)" = "600 foundry-backup"
+          test "$(sudo stat -c '%a %U' /etc/foundry-world-backup/config.json)" = "600 foundry-backup"
+          test "$(sudo stat -c '%a %U' /var/lib/foundry-world-backup)" = "700 foundry-backup"
+          test "$(sudo stat -c '%a %U %G' /etc/foundry-world-backup/admin-tls.key)" = "640 root foundry-backup"
+          sudo grep -q '^ADMIN_PORT=8484$' /etc/foundry-world-backup/env
+          # the certificate is the installed one, and plain http on that port is sent to https
+          sudo openssl x509 -noout -in /etc/foundry-world-backup/admin-tls.crt -checkhost localhost | grep -q 'does match'
+          test "$(curl -s -o /dev/null -w '%{redirect_url}' http://localhost:8484/x)" = https://localhost:8484/_admin/
+          # reachable through this machine's own address too
+          ip="$(hostname -I | awk '{print $1}')"
+          test "$(curl -sk -o /dev/null -w '%{http_code}' "https://$ip:8484/_admin/")" = 200
+          # the service user reads the world through the ACL the installer set
+          api=https://localhost:8484/_admin/api
+          test "$(curl -sk -o /dev/null -w '%{http_code}' "$api/state")" = 401
+          curl -skf -c "$RUNNER_TEMP/jar" -H 'Content-Type: application/json' \
+            -d "{\"password\":\"$FOUNDRY_BACKUP_ADMIN_PASSWORD\"}" "$api/login" > "$RUNNER_TEMP/login.json"
+          jq -e '.worlds[] | select(.id == "ci-world" and .readable == true and .title == "CI World")' "$RUNNER_TEMP/login.json"
+          jq -e '.token.canChange and .token.file == "/etc/foundry-world-backup/env"' "$RUNNER_TEMP/login.json"
+
+      - name: Admin page saves settings and starts the update run under the systemd hardening
+        run: |
+          api=https://localhost:8484/_admin/api
+          csrf="$(jq -r .csrf "$RUNNER_TEMP/login.json")"
+          test -n "$csrf"
+          curl -skf -b "$RUNNER_TEMP/jar" -H 'Content-Type: application/json' -H "X-CSRF-Token: $csrf" -X PUT \
+            -d '{"enabled":false}' "$api/worlds/ci-world" | jq -e '.worlds[] | select(.id == "ci-world" and .enabled == false)'
+          sudo grep -q '"ci-world"' /etc/foundry-world-backup/config.json
+          curl -skf -b "$RUNNER_TEMP/jar" -H 'Content-Type: application/json' -H "X-CSRF-Token: $csrf" -X PUT \
+            -d '{"schedule":{"frequency":"weekly","weekday":6,"time":"23:30","everyHours":6}}' "$api/settings" | jq -e '.settings.schedule.frequency == "weekly"'
+          # the sandbox lets the service rewrite env (a new GitHub token), and a token GitHub refuses changes nothing
+          before="$(sudo sha256sum /etc/foundry-world-backup/env)"
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -b "$RUNNER_TEMP/jar" -X PUT -H 'Content-Type: application/json' \
+            -H "X-CSRF-Token: $csrf" -d '{"token":"github_pat_ci_also_not_a_real_token"}' "$api/token")" = 400
+          test "$(sudo sha256sum /etc/foundry-world-backup/env)" = "$before"
+          test "$(sudo stat -c '%a %U' /etc/foundry-world-backup/env)" = "600 foundry-backup"
+          # a backup run: git works for the service user, the failure is GitHub's (fake token), and status.json is written
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -b "$RUNNER_TEMP/jar" -X POST -H 'Content-Type: application/json' \
+            -H "X-CSRF-Token: $csrf" -d '{}' "$api/worlds/ci-world/backup")" = 409
+          curl -skf -b "$RUNNER_TEMP/jar" -H 'Content-Type: application/json' -H "X-CSRF-Token: $csrf" -X PUT \
+            -d '{"enabled":true}' "$api/worlds/ci-world" >/dev/null
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -b "$RUNNER_TEMP/jar" -X POST -H 'Content-Type: application/json' \
+            -H "X-CSRF-Token: $csrf" -d '{}' "$api/worlds/ci-world/backup")" = 202
+          for _ in $(seq 1 30); do
+            result="$(curl -sk -b "$RUNNER_TEMP/jar" "$api/state" | jq -r '.worlds[] | select(.id == "ci-world") | .lastResult')"
+            [ "$result" = error ] && break
+            sleep 1
+          done
+          test "$result" = error
+          curl -sk -b "$RUNNER_TEMP/jar" "$api/state" | jq -e '.worlds[] | select(.id == "ci-world") | .lastError | test("GitHub")'
+          sudo test -f /var/lib/foundry-world-backup/repos/ci-world/HEAD
+          sudo test -f /var/lib/foundry-world-backup/status.json
+          sudo test ! -e /home/foundry/foundrydata/Data/worlds/ci-world/.git
+          ! sudo grep -r "$FOUNDRY_BACKUP_GITHUB_TOKEN" /var/lib/foundry-world-backup/status.json
+          ! sudo journalctl -u foundry-world-backup --no-pager | grep -q "$FOUNDRY_BACKUP_GITHUB_TOKEN"
+          # "Update now": the request file starts the root update service through the path unit (the update
+          # itself fails here: the token is fake)
+          systemctl is-active foundry-world-backup-update-now.path
+          test "$(sudo stat -c '%a %U' /etc/foundry-world-backup/update-request)" = "600 foundry-backup"
+          curl -skf -b "$RUNNER_TEMP/jar" "$api/update" | jq -e '.canUpdate and .installed != null'
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -b "$RUNNER_TEMP/jar" -X POST -H 'Content-Type: application/json' \
+            -H "X-CSRF-Token: $csrf" -d '{}' "$api/update")" = 202
+          ran=no
+          for _ in $(seq 1 30); do
+            if sudo journalctl -u foundry-world-backup-update-now --no-pager | grep -q 'auto-update:'; then ran=yes; break; fi
+            sleep 1
+          done
+          test "$ran" = yes
+          # the settings survive a restart
+          sudo systemctl restart foundry-world-backup
+          for _ in $(seq 1 15); do
+            curl -sk -o /dev/null https://localhost:8484/_admin/ && break
+            sleep 1
+          done
+          sudo grep -q '"weekly"' /etc/foundry-world-backup/config.json
+
+      - name: A new world is picked up with the inherited ACL; --grant-access and --set-admin-password work
+        run: |
+          sudo -u foundry mkdir -p /home/foundry/foundrydata/Data/worlds/new-world
+          echo '{"title":"New"}' | sudo -u foundry tee /home/foundry/foundrydata/Data/worlds/new-world/world.json >/dev/null
+          api=https://localhost:8484/_admin/api
+          curl -skf -c "$RUNNER_TEMP/jar2" -H 'Content-Type: application/json' \
+            -d "{\"password\":\"$FOUNDRY_BACKUP_ADMIN_PASSWORD\"}" "$api/login" > "$RUNNER_TEMP/login2.json"
+          csrf="$(jq -r .csrf "$RUNNER_TEMP/login2.json")"
+          curl -skf -b "$RUNNER_TEMP/jar2" -H 'Content-Type: application/json' -H "X-CSRF-Token: $csrf" -X POST -d '{}' \
+            "$api/worlds/rescan" | jq -e '.worlds[] | select(.id == "new-world" and .readable == true)'
+          sudo ./install.sh --grant-access
+          FOUNDRY_BACKUP_ADMIN_PASSWORD=another-ci-password sudo --preserve-env=FOUNDRY_BACKUP_ADMIN_PASSWORD ./install.sh --set-admin-password
+          for _ in $(seq 1 15); do
+            curl -sk -o /dev/null https://localhost:8484/_admin/ && break
+            sleep 1
+          done
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d '{"password":"another-ci-password"}' "$api/login")" = 200
+
+      - name: Uninstall
+        run: |
+          sudo ./install.sh --uninstall
+          test ! -e /opt/foundry-world-backup
+          test ! -e /etc/systemd/system/foundry-world-backup.service
+          test ! -e /etc/systemd/system/foundry-world-backup-update-now.path
+          test ! -e /etc/foundry-world-backup/update-request
+          sudo test -d /var/lib/foundry-world-backup
+
+      - name: Install again with a downloaded Node.js and --run-as the Foundry user
+        env:
+          NODE_BIN: /nonexistent/node
+        # under a strict root umask: the code and Node.js folders must still be readable for the service user
+        run: |
+          sudo ./install.sh --uninstall --purge
+          sudo --preserve-env=FOUNDRY_BACKUP_GITHUB_TOKEN,FOUNDRY_BACKUP_ADMIN_PASSWORD,NODE_BIN bash -c 'umask 077 && exec ./install.sh --install-node --yes --foundry-data /home/foundry/foundrydata --run-as foundry'
+
+      - name: Service answers with the downloaded Node.js as the Foundry user
+        run: |
+          code=000
+          for _ in $(seq 1 15); do
+            code="$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8484/_admin/ || true)"
+            [ "$code" = 200 ] && break
+            sleep 1
+          done
+          grep -q 'ExecStart=/opt/foundry-world-backup-node/bin/node ' /etc/systemd/system/foundry-world-backup.service
+          grep -q '^User=foundry$' /etc/systemd/system/foundry-world-backup.service
+          for p in /opt/foundry-world-backup /opt/foundry-world-backup/src /opt/foundry-world-backup-node/bin/node; do
+            test "$(stat -c '%a %U' "$p")" = "755 root"
+          done
+          sudo -u foundry test -r /opt/foundry-world-backup/src/notify.js
+          test "$code" = 200
+          curl -skf -H 'Content-Type: application/json' -d "{\"password\":\"$FOUNDRY_BACKUP_ADMIN_PASSWORD\"}" \
+            https://localhost:8484/_admin/api/login | jq -e '.worlds[] | select(.id == "ci-world" and .readable == true)'
+
+  windows-installer:
+    name: Inno Setup installer
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the event's commit, not a ref that can move during the run (a release's tag)
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Inno Setup (if the runner image lacks it)
+        shell: pwsh
+        run: |
+          $found = (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -or
+            (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
+          if (-not $found) { choco install innosetup -y --no-progress }
+
+      - name: Build the installer
+        shell: powershell
+        run: .\packaging\windows\build-installer.ps1 -OutDir dist
+
+      - name: Install, check and uninstall it
+        shell: powershell
+        run: .\packaging\windows\smoke-test.ps1 -Installer (Get-ChildItem dist\*.exe).FullName

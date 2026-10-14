@@ -1,0 +1,13 @@
+{
+  "name": "foundry-world-backup",
+  "version": "0.1.0",
+  "description": "Scheduled backups of Foundry VTT worlds to private GitHub repositories, with an administration page",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "src/server.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/config.test.js test/backup.test.js test/admin.test.js test/adminweb.test.js test/updater.test.js"
+  }
+}

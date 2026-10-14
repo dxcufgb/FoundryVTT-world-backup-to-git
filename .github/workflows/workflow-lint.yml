@@ -1,0 +1,53 @@
+# Checks the GitHub Actions workflows themselves, on every change to them:
+#   - actionlint: syntax, expressions, action inputs and shellcheck on every run: block
+#   - zizmor: security problems (script injection, leaked credentials, cache poisoning,
+#     unpinned actions, Dependabot settings). Findings show up as annotations on the PR.
+# Informational zizmor notes are shown but do not fail the check.
+
+name: Workflow lint
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - ".github/**"
+  pull_request:
+    paths:
+      - ".github/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        with:
+          cache: false
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          # Results go to PR annotations; uploading to the Security tab needs GitHub Advanced Security.
+          advanced-security: false
+          annotations: true
+          min-severity: low

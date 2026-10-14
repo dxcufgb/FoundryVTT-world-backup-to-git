@@ -1,0 +1,296 @@
+# How to release (the version comes from the tag only; nobody bumps package.json, the build stamps the version into
+# the built files):
+#   1. Actions -> Release -> Run workflow (on main) -> type the version, e.g. 1.2.3 (a leading "v" is dropped;
+#      1.2.3-rc.1 makes a pre-release). The release v1.2.3 is created on main's head and published once every job passed.
+#   2. Fallback: publish a release with a new tag v1.2.3 by hand in the GitHub UI. This workflow then builds the files,
+#      attaches them to that release and puts the download table in front of its notes.
+#
+# Flow: prepare (version, tag) -> ci (the whole of ci.yml: tests, shellcheck, PSScriptAnalyzer, real Linux and Windows
+# installs) and archives (scripts/build-release.sh) -> installer (setup.exe built on Windows from the Windows archive,
+# installed and uninstalled as a smoke test) -> publish (fixed-name and legacy copies, SHA256SUMS.txt; a manual run
+# creates a draft, replacing a draft left by a failed run, checks that the tag did not move, then publishes it).
+# Nothing is published if any job fails. The release published by this workflow does not start it again (events made
+# with GITHUB_TOKEN start no workflow runs). File names and the legacy copies: scripts/build-release.sh.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.2.3 (1.2.3-rc.1 makes a pre-release)"
+        required: true
+        type: string
+  release:
+    types: [published]
+
+permissions: {}
+
+# one release at a time
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # look up existing tags and releases
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Work out the version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            version="${INPUT_VERSION#v}"
+            if [[ ! "$version" =~ $semver ]]; then
+              echo "::error::'$INPUT_VERSION' is not a version like 1.2.3 or 1.2.3-rc.1"
+              exit 1
+            fi
+            if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+              echo "::error::run the release workflow on $DEFAULT_BRANCH (got $GITHUB_REF)"
+              exit 1
+            fi
+            tag="v$version"
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
+              echo "::error::tag $tag already exists; pick a new version"
+              exit 1
+            fi
+            # (a draft is only visible with write access; a draft left by a failed run is replaced by the publish job)
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+              echo "::error::release $tag already exists; pick a new version"
+              exit 1
+            fi
+            prerelease=false
+            if [[ "$version" == *-* ]]; then prerelease=true; fi
+          else
+            tag="$RELEASE_TAG"
+            if [[ "$tag" != v* || ! "${tag#v}" =~ $semver ]]; then
+              echo "::error::release tag '$tag' is not v + a version like 1.2.3 or 1.2.3-rc.1; no files are attached"
+              exit 1
+            fi
+            version="${tag#v}"
+            prerelease="$RELEASE_PRERELEASE"
+          fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::releasing $tag (pre-release: $prerelease)"
+
+  ci:
+    name: CI
+    needs: prepare
+    permissions:
+      contents: read
+    # "./" and not the newer "$/" self-repository form: actionlint 1.7.12 does not accept "$/" yet
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository]
+
+  archives:
+    name: Build archives
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the event's commit, not a ref that can move during the run (a release's tag)
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Build the archives with the version stamped in
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: ./scripts/build-release.sh dist "$VERSION"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archives
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  installer:
+    name: Windows installer
+    needs: [prepare, archives]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the event's commit, not a ref that can move during the run (a release's tag)
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+          path: archives
+
+      - name: Inno Setup (if the runner image lacks it)
+        shell: pwsh
+        run: |
+          $found = (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -or
+            (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
+          if (-not $found) { choco install innosetup -y --no-progress }
+
+      - name: Build the installer from the Windows archive
+        shell: powershell
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # the same files as the Windows archive, version already stamped
+          Expand-Archive -LiteralPath "archives\foundry-world-backup-$env:VERSION-windows.zip" -DestinationPath winsrc
+          .\packaging\windows\build-installer.ps1 -SourceDir "winsrc\foundry-world-backup-$env:VERSION" -Version $env:VERSION -OutDir setup
+
+      - name: Install, check and uninstall it
+        shell: powershell
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: .\packaging\windows\smoke-test.ps1 -Installer "setup\foundry-world-backup-$env:VERSION-setup.exe"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: setup
+          path: setup/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish release
+    needs: [prepare, ci, archives, installer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create, upload to and publish the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the event's commit, not a ref that can move during the run (a release's tag)
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: setup
+          path: dist
+
+      - name: Fixed names, legacy names and checksums
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          test -f "dist/foundry-world-backup-$VERSION-setup.exe"
+          ./scripts/build-release.sh --finish dist "$VERSION"
+          (cd dist && sha256sum --check --strict --quiet SHA256SUMS.txt && sha256sum --check --strict --quiet SHA256SUMS)
+          # the release gets exactly the files listed in SHA256SUMS.txt plus SHA256SUMS.txt itself
+          { awk '{print "dist/" $2}' dist/SHA256SUMS.txt; echo dist/SHA256SUMS.txt; } > "$RUNNER_TEMP/files.txt"
+
+      - name: Release notes header
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: ./scripts/release-notes.sh "$VERSION" "$GITHUB_REPOSITORY" > "$RUNNER_TEMP/header.md"
+
+      - name: Create the draft and publish it (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          mapfile -t files < "$RUNNER_TEMP/files.txt"
+          # a draft left behind by a failed run of the same version is replaced, so the run can simply be retried;
+          # a published release is never touched
+          if draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [[ "$draft" != "true" ]]; then
+              echo "::error::release $TAG is already published"
+              exit 1
+            fi
+            echo "::notice::deleting the draft $TAG left by an earlier run"
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+            --jq .body > "$RUNNER_TEMP/generated.md"
+          { cat "$RUNNER_TEMP/header.md"; echo; cat "$RUNNER_TEMP/generated.md"; } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "$TAG" \
+            --notes-file "$RUNNER_TEMP/notes.md" "${files[@]}"
+          # the tag must not exist yet or point at the commit this run built (GitHub creates it on publishing)
+          if commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha 2> "$RUNNER_TEMP/lookup.err")"; then
+            if [[ "$commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::tag $TAG points at $commit, but this run built $GITHUB_SHA; delete the draft and release again"
+              exit 1
+            fi
+          elif ! grep -q 'No commit found' "$RUNNER_TEMP/lookup.err"; then
+            echo "::error::could not look up tag $TAG: $(cat "$RUNNER_TEMP/lookup.err")"
+            exit 1
+          fi
+          if [[ "$PRERELEASE" == true ]]; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          else
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          fi
+
+      - name: Attach the files (release published by hand)
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          mapfile -t files < "$RUNNER_TEMP/files.txt"
+          # the files were built from the commit the tag pointed at when the release was published; refuse if it moved
+          if ! commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha 2> "$RUNNER_TEMP/lookup.err")"; then
+            echo "::error::could not look up tag $TAG: $(cat "$RUNNER_TEMP/lookup.err")"
+            exit 1
+          fi
+          if [[ "$commit" != "$GITHUB_SHA" ]]; then
+            echo "::error::tag $TAG now points at $commit, but this run built $GITHUB_SHA; nothing attached"
+            exit 1
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/body.md"
+          if grep -q '^## Downloads' "$RUNNER_TEMP/body.md"; then
+            echo "::notice::the notes of $TAG already start with the download table"
+          else
+            { cat "$RUNNER_TEMP/header.md"; echo; cat "$RUNNER_TEMP/body.md"; } > "$RUNNER_TEMP/notes.md"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+      - name: Summary
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          {
+            echo "## Release $TAG"
+            echo
+            echo "- started by: $EVENT (pre-release: $PRERELEASE)"
+            echo "- commit: $GITHUB_SHA"
+            echo "- release: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
+            echo
+            echo "Files:"
+            echo
+            sed 's|^dist/|- |' "$RUNNER_TEMP/files.txt"
+          } >> "$GITHUB_STEP_SUMMARY"

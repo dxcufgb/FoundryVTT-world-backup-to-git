@@ -1,0 +1,8 @@
+node_modules/
+.env
+config.json
+admin.json
+env
+state/
+*.log
+dist/
