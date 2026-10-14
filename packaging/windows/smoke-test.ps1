@@ -116,5 +116,7 @@ try {
 }
 catch {
     Show-Log
+    # an annotation on the check run, so the reason shows on the pull request without opening the log
+    Write-Output "::error title=Windows smoke test::$($_.Exception.Message -replace '[\r\n%]', ' ')"
     throw
 }

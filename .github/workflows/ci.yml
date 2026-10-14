@@ -88,6 +88,11 @@ jobs:
           }
           $results = 'scripts', 'packaging' | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Severity Warning, Error }
           $results | Format-Table -AutoSize | Out-String -Width 200 | Write-Output
+          # one annotation per finding, so it shows on the pull request without opening the log
+          foreach ($r in $results) {
+            $path = Resolve-Path -Relative -LiteralPath $r.ScriptPath
+            Write-Output "::error file=$path,line=$($r.Line),title=$($r.RuleName)::$($r.Message -replace '[\r\n%]', ' ')"
+          }
           if ($results -or $failed) { exit 1 }
 
   linux-install:
@@ -278,7 +283,9 @@ jobs:
 
       - name: Build the installer
         shell: powershell
-        run: .\packaging\windows\build-installer.ps1 -OutDir dist
+        run: |
+          try { .\packaging\windows\build-installer.ps1 -OutDir dist }
+          catch { Write-Output "::error title=Build the installer::$($_.Exception.Message -replace '[\r\n%]', ' ')"; throw }
 
       - name: Install, check and uninstall it
         shell: powershell
