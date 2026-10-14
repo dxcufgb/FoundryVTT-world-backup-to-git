@@ -399,19 +399,28 @@
     }
   }
 
+  function foundryResult(status, message) {
+    $('#foundry-results').replaceChildren(el('li', { class: status }, [
+      el('span', { class: 'mark', 'aria-hidden': 'true', text: MARK[status] || '?' }),
+      el('strong', { text: 'Foundry:' }),
+      el('span', { text: ` ${message}` }),
+    ]));
+  }
+
   async function testFoundry(e) {
     const button = e.currentTarget;
-    button.disabled = true;
     const list = $('#foundry-results');
-    list.replaceChildren(el('li', { text: 'Testing…' }));
     list.hidden = false;
+    // "Do not ask Foundry" ticked: nothing to test (the endpoint would test the saved address instead)
+    if ($('#foundry-form').off.checked) {
+      foundryResult('warn', 'off: Foundry is not asked, so there is nothing to test.');
+      return;
+    }
+    button.disabled = true;
+    list.replaceChildren(el('li', { text: 'Testing…' }));
     try {
       const r = await call('POST', 'foundry-test', { url: foundryFormUrl() });
-      list.replaceChildren(el('li', { class: r.status }, [
-        el('span', { class: 'mark', 'aria-hidden': 'true', text: MARK[r.status] || '?' }),
-        el('strong', { text: 'Foundry:' }),
-        el('span', { text: ` ${r.message}` }),
-      ]));
+      foundryResult(r.status, r.message);
     } catch (err) {
       list.hidden = true;
       toast(err.message, true);
