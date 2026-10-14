@@ -94,7 +94,7 @@
     const page = currentPage();
     for (const section of document.querySelectorAll('.page')) section.hidden = section.dataset.page !== page;
     for (const item of document.querySelectorAll('#settings-menu a')) {
-      if (item.getAttribute('href') === `#/${page}`) item.setAttribute('aria-current', 'page');
+      if (item.getAttribute('href') === (page === 'worlds' ? '#/' : `#/${page}`)) item.setAttribute('aria-current', 'page');
       else item.removeAttribute('aria-current');
     }
     document.title = page === 'worlds' ? 'Foundry World Backup' : `${PAGES[page]} – Foundry World Backup`;
@@ -239,7 +239,7 @@
     renderNotify();
   }
 
-  // The footer: installed version, the latest release, and why "Update now" is unavailable (if it is).
+  // The footer: installed version, the latest release, and why updating from this page is unavailable (if it is).
   function renderVersion(note) {
     let text = `Foundry World Backup ${state.version || '(version unknown)'}`;
     const notes = [];
@@ -252,7 +252,7 @@
         notes.push(`Latest release unknown: ${update.latestProblem}.`);
       }
       if (update.problem) {
-        notes.push(`"Update now" is not available: ${update.problem}`);
+        notes.push(`Updating from this page is not available: ${update.problem}`);
         bad = true;
       }
     }
@@ -263,20 +263,33 @@
     noteEl.textContent = notes.join(' ');
     noteEl.hidden = notes.length === 0;
     noteEl.className = bad ? 'small error' : 'small';
-    $('#update-now').disabled = Boolean(watching) || !update || !update.canUpdate;
+    $('#update-check').disabled = Boolean(watching);
   }
 
+  // "Check for update": asks GitHub for the latest release. Pressed by hand (e) and a newer one exists, it asks
+  // whether to install it now; the check after login only updates the footer.
   async function checkUpdate(e) {
     const button = $('#update-check');
     button.disabled = true;
     try {
       update = await call('GET', 'update');
       renderVersion();
-      if (e) toast(update.newer ? `Version ${update.latest} is available.` : 'Checked for updates.');
+      if (!e) return;
+      if (update.newer && update.canUpdate) {
+        $('#update-dialog-text').textContent =
+          `Version ${update.latest} is available; this service runs ${state.version || 'an unknown version'}. Update now?`;
+        $('#update-dialog').showModal();
+      } else if (update.newer) {
+        toast(`Version ${update.latest} is available, but updating from this page is not set up: ${update.problem}`, true);
+      } else if (update.newer === false) {
+        toast(`Foundry World Backup is up to date (${state.version}).`);
+      } else {
+        toast(update.latestProblem ? `Latest release unknown: ${update.latestProblem}` : 'Checked for updates.', Boolean(update.latestProblem));
+      }
     } catch (err) {
       if (e) toast(err.message, true);
     } finally {
-      button.disabled = false;
+      button.disabled = Boolean(watching);
     }
   }
 
@@ -313,11 +326,9 @@
     }, 5000);
   }
 
-  async function updateNow(e) {
-    const what = update && update.newer ? `version ${update.latest}` : 'the latest release (if it is newer)';
-    if (!confirm(`Install ${what} now?\nThe service restarts (a running backup is interrupted and retried later) and you log in again.`)) return;
-    const button = e.currentTarget;
-    button.disabled = true;
+  // The update dialog's "Update now": asks the installer's updater to run, then waits for the restart.
+  async function updateNow() {
+    $('#update-check').disabled = true;
     try {
       await call('POST', 'update', {});
       watchUpdate(state.version);
@@ -329,15 +340,28 @@
     }
   }
 
+  // With a token in use: a checkmark, its kind and "Add new token" (a dialog); without one: the field on the page.
   function renderToken() {
     const t = state.token;
+    const hasToken = Boolean(t.kind);
     const status = $('#token-status');
-    status.className = t.canChange ? '' : 'error';
-    const whose = t.owner ? ` of ${t.owner}` : '';
-    status.textContent = t.canChange
-      ? `In use: a ${t.kind}${whose}. A new one is saved to ${t.file}.`
-      : `In use: a ${t.kind || 'GitHub token'}${whose}. It cannot be changed here: ${t.file ? `${t.file}: ` : ''}${t.problem}`;
+    status.replaceChildren();
+    if (hasToken) {
+      status.append(el('span', { class: 'check-ok', 'aria-hidden': 'true', text: '✓' }),
+        el('strong', { text: 'A token is set' }), ` (${t.kind}${t.owner ? ` of ${t.owner}` : ''}).`);
+    } else {
+      status.textContent = 'No token is set: backups fail until one is added.';
+    }
+    const note = $('#token-note');
+    note.className = t.canChange ? 'hint' : 'hint error';
+    note.textContent = t.canChange
+      ? `A new token is saved to ${t.file}.`
+      : `It cannot be changed here: ${t.file ? `${t.file}: ` : ''}${t.problem}`;
+    $('#token-form').hidden = hasToken;
+    $('#token-save').hidden = hasToken;
+    $('#token-add').hidden = !hasToken;
     $('#token-save').disabled = !t.canChange;
+    $('#token-add').disabled = !t.canChange;
   }
 
   function renderGithub() {
@@ -457,7 +481,9 @@
     list.replaceChildren(el('li', { text: 'Testing…' }));
     list.hidden = false;
     try {
-      const r = await call('POST', 'setup-test', { token: $('#token-form').token.value.trim() });
+      // without a saved token, a token typed in the page's field is tested (not saved)
+      const typed = $('#token-form').hidden ? '' : $('#token-form').token.value.trim();
+      const r = await call('POST', 'setup-test', { token: typed });
       showResults(r);
       const bad = r.token.status === 'bad' || r.checks.some((c) => c.status === 'bad');
       toast(bad ? 'Test setup found problems (see the list).' : 'Test setup finished.', bad);
@@ -470,20 +496,46 @@
     }
   }
 
-  async function saveToken(e) {
+  // Saves a token (GitHub must accept it first); true when it is in use. onError gets the reason otherwise.
+  async function saveToken(token, onError) {
+    try {
+      render(await call('PUT', 'token', { token }));
+      toast('Token saved and in use. Delete the old one on GitHub when you no longer need it.');
+      return true;
+    } catch (err) {
+      onError(err.message);
+      return false;
+    }
+  }
+
+  async function saveTypedToken(e) {
     e.preventDefault();
     const form = e.currentTarget;
-    const button = $('#token-save');
+    $('#token-save').disabled = true;
+    if (await saveToken(form.token.value.trim(), (msg) => toast(msg, true))) form.reset();
+    $('#token-save').disabled = !state.token.canChange;
+  }
+
+  function openTokenDialog() {
+    $('#token-dialog-form').reset();
+    $('#token-dialog-error').hidden = true;
+    $('#token-dialog').showModal();
+    $('#token-dialog-form').token.focus();
+  }
+
+  async function addToken(e) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const button = $('#token-dialog-add');
+    const error = $('#token-dialog-error');
+    error.hidden = true;
     button.disabled = true;
-    try {
-      render(await call('PUT', 'token', { token: form.token.value.trim() }));
-      form.reset();
-      toast('Token saved and in use. Delete the old one on GitHub when you no longer need it.');
-    } catch (err) {
-      toast(err.message, true);
-    } finally {
-      button.disabled = !state.token.canChange;
-    }
+    const ok = await saveToken(form.token.value.trim(), (msg) => {
+      error.textContent = msg;
+      error.hidden = false;
+    });
+    button.disabled = false;
+    if (ok) $('#token-dialog').close();
   }
 
   async function saveGithub(e) {
@@ -871,9 +923,17 @@
     $('#foundry-form').off.addEventListener('change', (e) => {
       $('#foundry-form').url.disabled = e.currentTarget.checked;
     });
-    $('#token-form').addEventListener('submit', saveToken);
+    $('#token-form').addEventListener('submit', saveTypedToken);
+    $('#token-add').addEventListener('click', openTokenDialog);
+    $('#token-dialog-form').addEventListener('submit', addToken);
+    $('#token-dialog-cancel').addEventListener('click', () => $('#token-dialog').close());
+    // the typed token never stays in the page once the dialog is closed
+    $('#token-dialog').addEventListener('close', () => $('#token-dialog-form').reset());
     $('#update-check').addEventListener('click', checkUpdate);
-    $('#update-now').addEventListener('click', updateNow);
+    $('#update-dialog').addEventListener('close', () => {
+      if ($('#update-dialog').returnValue === 'update') updateNow();
+      $('#update-dialog').returnValue = '';
+    });
     $('#setup-test').addEventListener('click', testSetup);
     $('#notify-form').addEventListener('submit', saveNotify);
     $('#notify-test').addEventListener('click', testNotify);

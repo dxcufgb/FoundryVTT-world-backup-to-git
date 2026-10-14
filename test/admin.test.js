@@ -750,6 +750,20 @@ test('the saved Foundry address decides whether a backup waits for an active wor
   }
 });
 
+test('the page can tell whether a token is set (the GitHub page shows a checkmark or the field)', async () => {
+  for (const [token, kind] of [['', ''], [TOKEN, 'classic personal access token']]) {
+    const s = await start({ token });
+    try {
+      await s.login();
+      const res = await s.call('GET', 'state');
+      assert.equal(res.data.token.kind, kind, token ? 'a token: its kind' : 'no token: no kind');
+      assert.equal(res.data.token.canChange, true);
+    } finally {
+      await s.close();
+    }
+  }
+});
+
 test('Test setup checks the token, git, the data folder, the state folder, Foundry and every world repository', async () => {
   const gh = fakeGithub({
     tokens: { [TOKEN]: 'octo', [NEW_TOKEN]: 'other' },

@@ -307,7 +307,7 @@ function createApp({
   };
 
   const githubToken = {
-    info: () => ({ kind: tokenKind(currentToken || ''), file: envFile || null, problem: tokenStorageProblem(), owner }),
+    info: () => ({ kind: currentToken ? tokenKind(currentToken) : '', file: envFile || null, problem: tokenStorageProblem(), owner }),
     check: (tok) => github.checkToken(tok),
     test: testSetup,
     save(tok, login) {

@@ -81,7 +81,7 @@ h1 .sub { color: var(--muted); font-weight: 400; }
 }
 .menu a:hover, .menu a:focus-visible { background: var(--chip); }
 .menu a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.menu a[aria-current="page"] { font-weight: 600; }
+.menu a[aria-current="page"] { font-weight: 600; color: var(--accent); background: var(--chip); box-shadow: inset 3px 0 0 var(--accent); }
 .back { margin: 0 0 8px; }
 .back a { color: var(--accent); text-decoration: none; font-size: 0.9em; }
 .back a:hover { text-decoration: underline; }
@@ -212,6 +212,8 @@ td.repo code { word-break: normal; }
 .results .warn .mark { color: var(--warn); }
 .results .bad .mark { color: var(--danger); }
 #token-status, #foundry-status { margin: 0 0 12px; }
+#token-note { margin: -8px 0 12px; }
+.check-ok { color: var(--ok); font-weight: 700; margin-right: 6px; }
 #toast {
   position: fixed;
   right: 20px;

@@ -23,6 +23,7 @@
           </svg>
         </button>
         <div id="settings-menu" class="menu" role="menu" aria-labelledby="settings-button" hidden>
+          <a role="menuitem" href="#/">Worlds</a>
           <a role="menuitem" href="#/schedule">Schedule</a>
           <a role="menuitem" href="#/foundry">Foundry</a>
           <a role="menuitem" href="#/github">GitHub</a>
@@ -115,17 +116,21 @@
         <p class="back"><a href="#/">← Worlds</a></p>
         <h2>GitHub</h2>
         <p class="hint">The service pushes with this token and creates a private repository for a world that has none
-          yet. It is never shown here. Before it expires, create a new one on GitHub, paste it below and save it: it is
-          used at once. <strong>Test setup</strong> checks the token, git, the data folder, Foundry and every world's
-          repository; with a token in the field it tests that one without saving it.</p>
+          yet. It is never shown here. Before it expires, create a new one on GitHub and add it here: GitHub must accept
+          it first, then it is used at once. <strong>Test setup</strong> checks the token, git, the data folder, Foundry
+          and every world's repository.</p>
         <p id="token-status"></p>
-        <form id="token-form">
-          <label>New token <input type="password" name="token" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
-          <div class="buttons">
-            <button type="submit" id="token-save">Save token</button>
-            <button type="button" id="setup-test" class="secondary">Test setup</button>
-          </div>
+        <p id="token-note" class="hint"></p>
+        <!-- no token yet: the field right here (Test setup tests a typed one without saving it); with one, "Add new
+             token" opens #token-dialog -->
+        <form id="token-form" hidden>
+          <label>Token <input type="password" name="token" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
         </form>
+        <div class="buttons">
+          <button type="submit" id="token-save" form="token-form" hidden>Save token</button>
+          <button type="button" id="token-add" hidden>Add new token</button>
+          <button type="button" id="setup-test" class="secondary">Test setup</button>
+        </div>
         <ul id="setup-results" class="results" hidden></ul>
         <form id="github-form">
           <fieldset>
@@ -200,10 +205,36 @@
     </div>
     <div class="buttons">
       <button type="button" id="update-check" class="secondary small">Check for update</button>
-      <button type="button" id="update-now" class="small"
-        title="Installs the latest release now with the installer's own updater: only a newer, checksum-verified release; a failed update puts the previous version back">Update now</button>
     </div>
   </footer>
+
+  <dialog id="token-dialog" aria-labelledby="token-dialog-title">
+    <form id="token-dialog-form">
+      <h2 id="token-dialog-title">Add new token</h2>
+      <p class="hint">It replaces the token in use as soon as GitHub accepts it; the old one stays valid on GitHub until
+        you delete it there.</p>
+      <label>New token <input type="password" name="token" required autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
+      <p class="error" id="token-dialog-error" hidden></p>
+      <div class="buttons">
+        <button type="submit" id="token-dialog-add">Add</button>
+        <button type="button" class="secondary" id="token-dialog-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="update-dialog" aria-labelledby="update-dialog-title">
+    <form method="dialog">
+      <h2 id="update-dialog-title">Update available</h2>
+      <p id="update-dialog-text"></p>
+      <p class="hint">The installer's own updater installs it: only a newer, checksum-verified release, and a failed
+        update puts the previous version back. The service restarts (a running backup is interrupted and retried
+        later) and you log in again. The notification e-mail says how it went.</p>
+      <div class="buttons">
+        <button type="submit" value="update">Update now</button>
+        <button type="submit" value="cancel" class="secondary">Not now</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="world-dialog">
     <form id="world-form" method="dialog">
