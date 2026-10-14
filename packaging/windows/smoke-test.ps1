@@ -28,22 +28,35 @@ function Show-Log {
     }
 }
 
-# One HTTPS request to the admin page with the self-signed certificate accepted; returns [status, body].
+# One HTTPS request to the admin page with the self-signed certificate accepted; returns { status, cookie, body }.
+# The request goes to node through environment variables: Windows PowerShell 5.1 drops empty-string arguments to
+# native programs, which would shift every argument after an empty body or cookie.
 function Invoke-Admin([string]$Method, [string]$Path, [string]$Body, [string]$Cookie, [string]$Csrf) {
     $node = "$env:ProgramFiles\FoundryWorldBackup-Node\node.exe"
     $script = @"
 const https = require('https');
-const body = process.argv[2];
-const req = https.request({ host: 'localhost', port: 8484, path: process.argv[1], method: process.argv[3], rejectUnauthorized: false,
-  headers: { 'Content-Type': 'application/json', Cookie: process.argv[4], 'X-CSRF-Token': process.argv[5] } }, (r) => {
+const e = process.env;
+const headers = { 'Content-Type': 'application/json' };
+if (e.FWB_REQ_COOKIE) headers.Cookie = e.FWB_REQ_COOKIE;
+if (e.FWB_REQ_CSRF) headers['X-CSRF-Token'] = e.FWB_REQ_CSRF;
+const req = https.request({ host: 'localhost', port: 8484, path: e.FWB_REQ_PATH, method: e.FWB_REQ_METHOD, rejectUnauthorized: false, headers }, (r) => {
   let data = ''; r.on('data', (c) => data += c);
   r.on('end', () => console.log(JSON.stringify({ status: r.statusCode, cookie: (r.headers['set-cookie'] || [''])[0].split(';')[0], body: data })));
 });
-req.on('error', (e) => console.log(JSON.stringify({ status: 0, body: e.message })));
-if (body) req.write(body);
+req.on('error', (err) => console.log(JSON.stringify({ status: 0, cookie: '', body: err.message })));
+if (e.FWB_REQ_BODY) req.write(e.FWB_REQ_BODY);
 req.end();
 "@
-    $out = & $node -e $script -- $Path $Body $Method $Cookie $Csrf
+    $env:FWB_REQ_METHOD = $Method
+    $env:FWB_REQ_PATH = $Path
+    $env:FWB_REQ_BODY = $Body
+    $env:FWB_REQ_COOKIE = $Cookie
+    $env:FWB_REQ_CSRF = $Csrf
+    try { $out = & $node -e $script }
+    finally {
+        Remove-Item Env:FWB_REQ_METHOD, Env:FWB_REQ_PATH, Env:FWB_REQ_BODY, Env:FWB_REQ_COOKIE, Env:FWB_REQ_CSRF -ErrorAction SilentlyContinue
+    }
+    if (-not "$out") { return [pscustomobject]@{ status = 0; cookie = ''; body = 'node printed nothing' } }
     "$out" | ConvertFrom-Json
 }
 
