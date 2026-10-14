@@ -671,6 +671,80 @@ test('the GitHub token can be replaced on the admin page once GitHub accepts it,
   }
 });
 
+test('the Foundry page saves and tests Foundry\'s address; the saved one wins over FOUNDRY_URL', async () => {
+  const asked = [];
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    if (url === 'http://foundry.test:30000/api/status') return new Response(JSON.stringify({ active: true, world: 'alpha' }));
+    if (url === 'http://other.test:30001/api/status') return new Response(JSON.stringify({ active: false }));
+    throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+  };
+  const s = await start({ fetchImpl, foundryUrl: 'http://foundry.test:30000' });
+  try {
+    await s.login();
+    let res = await s.call('GET', 'state');
+    assert.deepEqual(res.data.settings.foundry, { url: null, inUse: 'http://foundry.test:30000', defaultUrl: 'http://foundry.test:30000' });
+    // the address in use
+    res = await s.call('POST', 'foundry-test', {});
+    assert.equal(res.status, 200, res.text);
+    assert.equal(res.data.tested, 'saved');
+    assert.equal(res.data.status, 'ok');
+    assert.match(res.data.message, /world "alpha" is active/);
+    // a typed one is tested without being saved
+    res = await s.call('POST', 'foundry-test', { url: 'http://down.test:1' });
+    assert.equal(res.data.tested, 'typed');
+    assert.equal(res.data.status, 'warn');
+    assert.match(res.data.message, /did not answer \/api\/status \(cannot connect \(ECONNREFUSED\)\)/);
+    assert.equal((await s.call('GET', 'state')).data.settings.foundry.inUse, 'http://foundry.test:30000');
+    res = await s.call('POST', 'foundry-test', { url: 'ftp://foundry.test' });
+    assert.equal(res.status, 400);
+    assert.match(res.data.error, /http:\/\/ or https:\/\//);
+    // saved: config.json, used by the backups and Test setup
+    res = await s.call('PUT', 'settings', { foundry: { url: 'http://other.test:30001' } });
+    assert.equal(res.status, 200, res.text);
+    assert.deepEqual(res.data.settings.foundry, { url: 'http://other.test:30001', inUse: 'http://other.test:30001', defaultUrl: 'http://foundry.test:30000' });
+    assert.deepEqual(JSON.parse(fs.readFileSync(s.configFile, 'utf8')).foundry, { url: 'http://other.test:30001' });
+    assert.ok(s.logs.includes('admin: Foundry settings changed'));
+    asked.length = 0;
+    res = await s.call('POST', 'foundry-test', {});
+    assert.match(res.data.message, /reachable at http:\/\/other.test:30001, no world active/);
+    assert.deepEqual(asked, ['http://other.test:30001/api/status']);
+    // off: nobody is asked
+    res = await s.call('PUT', 'settings', { foundry: { url: '' } });
+    assert.equal(res.data.settings.foundry.inUse, '');
+    res = await s.call('POST', 'foundry-test', {});
+    assert.equal(res.data.status, 'warn');
+    assert.match(res.data.message, /no address set/);
+    // back to FOUNDRY_URL
+    res = await s.call('PUT', 'settings', { foundry: { url: null } });
+    assert.equal(res.data.settings.foundry.inUse, 'http://foundry.test:30000');
+    assert.equal(JSON.parse(fs.readFileSync(s.configFile, 'utf8')).foundry, undefined);
+    // bad input changes nothing
+    res = await s.call('PUT', 'settings', { foundry: { url: 'http://u:p@foundry.test' } });
+    assert.equal(res.status, 400);
+    assert.match(res.data.error, /user name or password/);
+    assert.equal(JSON.parse(fs.readFileSync(s.configFile, 'utf8')).foundry, undefined);
+  } finally {
+    await s.close();
+  }
+});
+
+test('the saved Foundry address decides whether a backup waits for an active world', async () => {
+  const gh = fakeGithub({ repos: { 'octo/foundry-world-alpha': { private: true, push: true } }, foundry: { active: true, world: 'alpha' } });
+  // FOUNDRY_URL is off; the address saved on the page is asked
+  const s = await start({ fetchImpl: gh.fetchImpl, config: '{"whenActive":"skip","foundry":{"url":"http://foundry.test:30000"}}', worlds: { alpha: {} } });
+  try {
+    await s.login();
+    const res = await s.call('POST', 'worlds/alpha/backup', {});
+    assert.equal(res.status, 202, res.text);
+    await s.app.backups.idle();
+    const alpha = (await s.call('GET', 'state')).data.worlds.find((w) => w.id === 'alpha');
+    assert.equal(alpha.lastResult, 'skipped');
+  } finally {
+    await s.close();
+  }
+});
+
 test('Test setup checks the token, git, the data folder, the state folder, Foundry and every world repository', async () => {
   const gh = fakeGithub({
     tokens: { [TOKEN]: 'octo', [NEW_TOKEN]: 'other' },

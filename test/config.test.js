@@ -21,6 +21,17 @@ test('an empty config gives the defaults and the file written back is minimal', 
   assert.equal(parseConfig('').worlds['x'], undefined);
 });
 
+test('Foundry\'s address: unset falls back to FOUNDRY_URL, "" turns the check off, a URL is kept', () => {
+  assert.equal(parseConfig('{}').foundry.url, null);
+  assert.equal(parseConfig('{"foundry":{}}').foundry.url, null);
+  assert.equal(parseConfig('{"foundry":{"url":""}}').foundry.url, '');
+  const c = parseConfig('{"foundry":{"url":" https://foundry.example:30000/game "}}');
+  assert.equal(c.foundry.url, 'https://foundry.example:30000/game');
+  assert.deepEqual(JSON.parse(serializeConfig(c)).foundry, { url: 'https://foundry.example:30000/game' });
+  assert.deepEqual(JSON.parse(serializeConfig(parseConfig('{"foundry":{"url":""}}'))).foundry, { url: '' });
+  assert.equal(JSON.parse(serializeConfig(parseConfig('{}'))).foundry, undefined, 'not written while unset');
+});
+
 test('world settings fall back to the global ones field by field', () => {
   const c = parseConfig(JSON.stringify({
     schedule: { frequency: 'weekly', weekday: 6, time: '23:30' },
@@ -63,6 +74,13 @@ test('malformed configs are refused with a clear message', () => {
     ['{"worlds":{"a":{"enabled":1}}}', /enabled must be true or false/],
     ['{"worlds":{"a":{"other":1}}}', /unknown key "other"/],
     ['{"worlds":{"__proto__":{}}}', /invalid world id/],
+    ['{"foundry":"http://x"}', /"foundry" must be an object/],
+    ['{"foundry":{"host":"x"}}', /unknown key "host"/],
+    ['{"foundry":{"url":30000}}', /url must be a string/],
+    ['{"foundry":{"url":"localhost:30000"}}', /must start with http/],
+    ['{"foundry":{"url":"not a url"}}', /not a valid address/],
+    ['{"foundry":{"url":"http://user:pw@foundry:30000"}}', /user name or password/],
+    ['{"foundry":{"url":"http://foundry:30000/?x=1"}}', /"\?" or "#"/],
     ['nope', /not valid JSON/],
   ];
   for (const [text, re] of bad) assert.throws(() => parseConfig(text), re, text);

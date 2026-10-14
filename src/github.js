@@ -116,22 +116,30 @@ function createGithub({ fetchImpl = fetch, userAgent = 'foundry-world-backup' } 
 }
 
 /**
- * GET <foundryUrl>/api/status: the world Foundry has launched, or null when it has none or cannot be reached
- * ({ active: false, world: null, reachable: false }).
+ * GET <foundryUrl>/api/status: the world Foundry has launched ({ reachable, active, world }); when Foundry cannot be
+ * asked, { reachable: false, active: false, world: null, problem } with a short reason.
  */
 async function foundryStatus(foundryUrl, fetchImpl = fetch) {
-  if (!foundryUrl) return { reachable: false, active: false, world: null };
+  const down = (problem) => ({ reachable: false, active: false, world: null, problem });
+  if (!foundryUrl) return down('no Foundry address set');
   try {
     const res = await fetchImpl(`${foundryUrl.replace(/\/+$/, '')}/api/status`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) {
       await res.body?.cancel?.();
-      return { reachable: false, active: false, world: null };
+      return down(`HTTP ${res.status}`);
     }
-    const body = await res.json();
+    let body;
+    try {
+      body = await res.json();
+    } catch {
+      return down('the answer is not JSON (is this Foundry?)');
+    }
     const world = body && typeof body.world === 'string' ? body.world : null;
     return { reachable: true, active: Boolean(body && body.active) && Boolean(world), world };
-  } catch {
-    return { reachable: false, active: false, world: null };
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') return down('no answer within 5 seconds');
+    const cause = err && err.cause && err.cause.code;
+    return down(cause ? `cannot connect (${cause})` : 'cannot connect');
   }
 }
 

@@ -38,6 +38,7 @@ per-world settings and is written by the administration page:
   "schedule": { "frequency": "daily", "time": "04:00", "weekday": 0, "everyHours": 6 },
   "github": { "repoPrefix": "foundry-world-", "createRepos": true },
   "whenActive": "backup",
+  "foundry": { "url": "http://localhost:30000" },
   "worlds": {
     "my-campaign": { "enabled": true, "repo": "", "schedule": null, "whenActive": "" },
     "test-world": { "enabled": false }
@@ -53,8 +54,9 @@ per-world settings and is written by the administration page:
   says otherwise. `github.createRepos`: create a missing repository (always private) on the first backup; off =
   a missing repository is an error.
 - `whenActive`: what to do when Foundry has the world launched at backup time: `backup` (back it up anyway; the
-  commit message says so) or `skip` (wait for the next run). Foundry's `/api/status` (`FOUNDRY_URL`) tells which
-  world is active.
+  commit message says so) or `skip` (wait for the next run). Foundry's `/api/status` tells which world is active.
+- `foundry.url`: where Foundry answers `/api/status` (http or https, no user name or password); set on the admin
+  page's **Foundry** page. Absent = `FOUNDRY_URL` from the environment; `""` = never ask (no active-world check).
 - `worlds.<id>`: `enabled` (default true: a new world is backed up without any setup), `repo`, `schedule` (its own
   schedule, or `null` for the global one) and `whenActive` (`""` for the global setting). Worlds that are not listed
   get the defaults. A world id is the folder name under `Data/worlds`.
@@ -63,7 +65,8 @@ Environment variables (see `.env.example`): `GITHUB_TOKEN`, `FOUNDRY_DATA` (requ
 the one with `Config`, `Data` and `Logs`; its `Data` or `Data/worlds` folder works too), `CONFIG_FILE`, `STATE_DIR`
 (default `state` next to `CONFIG_FILE`), `ADMIN_FILE` (default `admin.json` next to `CONFIG_FILE`), `ENV_FILE` (the
 file holding `GITHUB_TOKEN`, where a token changed on the admin page is saved; default `env` next to `CONFIG_FILE`),
-`FOUNDRY_URL` (default `http://localhost:30000`; empty = never ask whether a world is active), `GIT_BIN`,
+`FOUNDRY_URL` (default `http://localhost:30000`; empty = never ask whether a world is active; `foundry.url` in
+`config.json`, set on the admin page, wins), `GIT_BIN`,
 `DAILY_CHECK` (`off` turns off the [daily token check](#daily-check)), and the admin page settings `ADMIN_PORT`
 (default `8484`), `ADMIN_HOST` (default `0.0.0.0`), `ADMIN_TLS` (`off` = plain HTTP, only behind a reverse proxy),
 `ADMIN_TLS_CERT`, `ADMIN_TLS_KEY`, `ADMIN_HOSTS`, `ADMIN_PUBLIC_URL`, `ADMIN_TRUST_PROXY`.
@@ -185,6 +188,7 @@ page is a table with one row per world folder:
 
 | Column | Shows |
 | --- | --- |
+| Back up | a checkbox, ticked while the world is backed up; clearing it turns the world off (its other settings stay) |
 | World | the title from `world.json`, the id, the game system, and the world's own schedule if it has one |
 | Backed up | **Yes** (the last run succeeded; "no changes since the backup before" when nothing had changed), **Failed** with the reason, **Skipped** (the world was active and its settings say to wait), **Not yet** with the time of the first run, **Off**, or **Not readable** |
 | Last backup | how long ago the last successful backup was (hover for the exact time) and when the next run is |
@@ -193,7 +197,8 @@ page is a table with one row per world folder:
 | Actions | **Back up now** and the **cogwheel** with the world's settings |
 
 **Rescan** re-reads the worlds folder (a new world is also found on the next scheduled run); **Back up all now**
-queues every enabled world. The cogwheel of a world opens its settings: back this world up (on/off), repository
+queues every enabled world. The cogwheel of a world opens its settings: back this world up (on/off, the same as the
+row's checkbox), repository
 (empty = the default name), the global schedule or its own, and what to do while the world is active in Foundry.
 A world whose folder is gone can be **forgotten** there (its settings, status and local git copy are removed; the
 repository on GitHub stays).
@@ -201,6 +206,9 @@ repository on GitHub stays).
 The cogwheel in the header leads to the other pages:
 
 - **Schedule**: the global schedule (every day / every week / every few hours, at a time) and the active-world rule.
+- **Foundry**: the address Foundry answers `/api/status` on (which world is active), saved to `config.json`
+  (`foundry.url`), or "do not ask Foundry"; **Test** asks the typed address without saving it (reachable, which
+  world is active, or why it did not answer); **Use the installer's address** goes back to `FOUNDRY_URL`.
 - **GitHub**: the token (never shown; a new one is checked with GitHub before it replaces the old one in `env`),
   **Test setup** (the token, `git`, the data folder, the state folder, Foundry's `/api/status`, the release
   repository for automatic updates and every enabled world's repository: exists / will be created / cannot be
@@ -215,7 +223,8 @@ API rules (for scripts): every call but `POST /_admin/api/login` needs the sessi
 `X-CSRF-Token` header (from the login or state answer) and `Content-Type: application/json`; a request with an
 unknown `Host`/`Origin` is refused (403, DNS rebinding); five failed logins lock the address out for five minutes.
 Routes: `GET state`, `POST worlds/rescan`, `PUT worlds/<id>`, `POST worlds/<id>/backup` (202; 409 while queued,
-turned off or unreadable), `DELETE worlds/<id>`, `PUT settings`, `PUT token`, `POST setup-test`, `PUT notify`,
+turned off or unreadable), `DELETE worlds/<id>`, `PUT settings` (`schedule`, `github`, `whenActive`, `foundry`), `POST foundry-test` (`url`
+optional: without it the address in use), `PUT token`, `POST setup-test`, `PUT notify`,
 `POST notify/test`, `PUT password`, `GET`/`POST update`, `POST logout`.
 
 ### The admin page on a public address

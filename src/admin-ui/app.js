@@ -1,7 +1,8 @@
 'use strict';
 // Administration page of the Foundry world backup. Plain DOM code, no libraries; every value from the server is put
 // into the page with textContent, never as HTML. One HTML page with several views, chosen by the address's
-// fragment: #/ (worlds), #/schedule, #/github, #/notifications, #/password (the settings menu links to them).
+// fragment: #/ (worlds), #/schedule, #/foundry, #/github, #/notifications, #/password (the settings menu links to
+// them).
 
 (() => {
   const $ = (sel) => document.querySelector(sel);
@@ -15,6 +16,7 @@
   const PAGES = {
     worlds: 'Worlds',
     schedule: 'Schedule',
+    foundry: 'Foundry',
     github: 'GitHub',
     notifications: 'Notifications',
     password: 'Admin password',
@@ -66,11 +68,13 @@
     $('#top-actions').hidden = true;
     $('#app-footer').hidden = true;
     $('#login-view').hidden = false;
+    document.body.classList.add('logged-out');
     document.title = 'Foundry World Backup';
     $('#login-form').password.focus();
   }
 
   function showApp(data) {
+    document.body.classList.remove('logged-out');
     $('#login-view').hidden = true;
     $('#app-view').hidden = false;
     $('#top-actions').hidden = false;
@@ -228,6 +232,7 @@
     state = data;
     renderWorlds();
     renderSchedule();
+    renderFoundry();
     renderToken();
     renderGithub();
     renderVersion();
@@ -348,6 +353,73 @@
     $('#schedule-link').textContent = describeSchedule(state.settings.schedule);
   }
 
+  // The Foundry page: the address asked for /api/status, saved here or from the installer (FOUNDRY_URL), or off.
+  function renderFoundry() {
+    const f = state.settings.foundry;
+    const form = $('#foundry-form');
+    const off = f.inUse === '';
+    form.url.value = f.inUse || f.defaultUrl || '';
+    form.off.checked = off;
+    form.url.disabled = off;
+    const from = f.url !== null ? 'saved on this page' : 'FOUNDRY_URL from the installer';
+    $('#foundry-status').textContent = off
+      ? `Off (${from}): Foundry is not asked, so a world is backed up even while it is active.`
+      : `In use: ${f.inUse} (${from}).`;
+    $('#foundry-url-hint').textContent = f.defaultUrl
+      ? `FOUNDRY_URL from the installer: ${f.defaultUrl}.` : 'The installer set no address (FOUNDRY_URL is empty).';
+    $('#foundry-reset').hidden = f.url === null;
+  }
+
+  function foundryFormUrl() {
+    const form = $('#foundry-form');
+    return form.off.checked ? '' : form.url.value.trim();
+  }
+
+  async function saveFoundry(e) {
+    e.preventDefault();
+    const url = foundryFormUrl();
+    if (!url && !$('#foundry-form').off.checked) {
+      toast('Enter Foundry\'s address, or tick "Do not ask Foundry".', true);
+      return;
+    }
+    try {
+      render(await call('PUT', 'settings', { foundry: { url } }));
+      toast('Foundry settings saved.');
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function resetFoundry() {
+    try {
+      render(await call('PUT', 'settings', { foundry: { url: null } }));
+      toast('The installer\'s address is used again.');
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function testFoundry(e) {
+    const button = e.currentTarget;
+    button.disabled = true;
+    const list = $('#foundry-results');
+    list.replaceChildren(el('li', { text: 'Testing…' }));
+    list.hidden = false;
+    try {
+      const r = await call('POST', 'foundry-test', { url: foundryFormUrl() });
+      list.replaceChildren(el('li', { class: r.status }, [
+        el('span', { class: 'mark', 'aria-hidden': 'true', text: MARK[r.status] || '?' }),
+        el('strong', { text: 'Foundry:' }),
+        el('span', { text: ` ${r.message}` }),
+      ]));
+    } catch (err) {
+      list.hidden = true;
+      toast(err.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   const MARK = { ok: '✓', warn: '!', bad: '✗' };
 
   function showResults(r) {
@@ -458,6 +530,10 @@
         : [el('span', { class: 'muted', text: 'Never' }),
           el('span', { class: 'status', text: w.enabled && w.nextRun ? `Next: ${new Date(w.nextRun).toLocaleString()}` : '' })];
       const row = el('tr', { class: w.enabled ? '' : 'disabled' }, [
+        el('td', { class: 'check-col' }, [
+          el('input', { type: 'checkbox', 'aria-label': `Back up ${w.title}`, title: w.enabled ? 'Backed up: clear to turn off' : 'Not backed up: tick to turn on',
+            onchange: (e) => setEnabled(w, e.currentTarget) }),
+        ]),
         el('td', {}, [
           el('strong', { text: w.title }),
           el('span', { class: 'status', text: w.id + (w.system ? ` · ${w.system}` : '') + (w.customSchedule ? ` · ${describeSchedule(w.schedule)}` : '') }),
@@ -477,6 +553,7 @@
             title: 'Settings', onclick: () => openWorld(w) }, [gearIcon()]),
         ])]),
       ]);
+      row.querySelector('input[type="checkbox"]').checked = w.enabled;
       const button = row.querySelector('button');
       button.disabled = !w.enabled || !w.readable || w.running || w.queued;
       body.append(row);
@@ -486,6 +563,24 @@
     $('#backup-all').disabled = !state.worlds.some((w) => w.enabled && w.readable && !w.running && !w.queued);
     if (active || state.busy) startPolling();
     else stopPolling();
+  }
+
+  // The checkbox of a row: turns the world on or off and keeps its other settings.
+  async function setEnabled(w, box) {
+    box.disabled = true;
+    try {
+      render(await call('PUT', `worlds/${encodeURIComponent(w.id)}`, {
+        enabled: box.checked,
+        repo: w.ownRepo || '',
+        schedule: w.customSchedule ? w.schedule : null,
+        whenActive: w.ownWhenActive || '',
+      }));
+      toast(box.checked ? `${w.title} is backed up again.` : `${w.title} is no longer backed up.`);
+    } catch (err) {
+      box.checked = !box.checked;
+      box.disabled = false;
+      toast(err.message, true);
+    }
   }
 
   function gearIcon() {
@@ -761,6 +856,12 @@
     }
     $('#schedule-form').addEventListener('submit', saveSchedule);
     $('#github-form').addEventListener('submit', saveGithub);
+    $('#foundry-form').addEventListener('submit', saveFoundry);
+    $('#foundry-test').addEventListener('click', testFoundry);
+    $('#foundry-reset').addEventListener('click', resetFoundry);
+    $('#foundry-form').off.addEventListener('change', (e) => {
+      $('#foundry-form').url.disabled = e.currentTarget.checked;
+    });
     $('#token-form').addEventListener('submit', saveToken);
     $('#update-check').addEventListener('click', checkUpdate);
     $('#update-now').addEventListener('click', updateNow);
