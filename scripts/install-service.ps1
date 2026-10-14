@@ -277,8 +277,8 @@ function Get-WorldsDir([string]$Dir) {
 # A likely Foundry user data folder on this PC, for the prompt ('' when none is found).
 function Find-FoundryData {
     $users = Join-Path $env:SystemDrive 'Users'
-    foreach ($profile in Get-ChildItem -LiteralPath $users -Directory -ErrorAction SilentlyContinue) {
-        $candidate = Join-Path $profile.FullName 'AppData\Local\FoundryVTT'
+    foreach ($userDir in Get-ChildItem -LiteralPath $users -Directory -ErrorAction SilentlyContinue) {
+        $candidate = Join-Path $userDir.FullName 'AppData\Local\FoundryVTT'
         if (Test-Path -LiteralPath (Join-Path $candidate 'Data\worlds')) { return $candidate }
     }
     ''

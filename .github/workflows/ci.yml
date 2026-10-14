@@ -84,10 +84,17 @@ jobs:
           foreach ($file in Get-ChildItem scripts/*.ps1, packaging/windows/*.ps1) {
             $tokens = $null; $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
-            if ($errors) { $errors | ForEach-Object { Write-Output "::error file=$($file.Name)::$_" }; $failed = $true }
+            # repository-relative path with forward slashes, or the annotation is not attached to the file
+            $rel = (Resolve-Path -Relative -LiteralPath $file.FullName) -replace '\\', '/' -replace '^\./', ''
+            if ($errors) { $errors | ForEach-Object { Write-Output "::error file=$rel,line=$($_.Extent.StartLineNumber)::$($_.Message -replace '[\r\n%]', ' ')" }; $failed = $true }
           }
           $results = 'scripts', 'packaging' | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Severity Warning, Error }
           $results | Format-Table -AutoSize | Out-String -Width 200 | Write-Output
+          # one annotation per finding, so it shows on the pull request without opening the log
+          foreach ($r in $results) {
+            $path = (Resolve-Path -Relative -LiteralPath $r.ScriptPath) -replace '\\', '/' -replace '^\./', ''
+            Write-Output "::error file=$path,line=$($r.Line),title=$($r.RuleName)::$($r.Message -replace '[\r\n%]', ' ')"
+          }
           if ($results -or $failed) { exit 1 }
 
   linux-install:
@@ -278,7 +285,9 @@ jobs:
 
       - name: Build the installer
         shell: powershell
-        run: .\packaging\windows\build-installer.ps1 -OutDir dist
+        run: |
+          try { .\packaging\windows\build-installer.ps1 -OutDir dist }
+          catch { Write-Output "::error title=Build the installer::$($_.Exception.Message -replace '[\r\n%]', ' ')"; throw }
 
       - name: Install, check and uninstall it
         shell: powershell
