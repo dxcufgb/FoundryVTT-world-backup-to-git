@@ -27,6 +27,8 @@
     --chip: #28324a;
     color-scheme: dark;
   }
+  /* the logo's outlines and the GitHub mark are black: give it a light plate on the dark card */
+  .login-logo { background: #e6e9ef; padding: 8px 10px; }
 }
 * { box-sizing: border-box; }
 /* the hidden attribute always wins, also over display rules below */
@@ -115,6 +117,7 @@ footer .footer-text { min-width: 0; }
 body.logged-out main { display: flex; align-items: center; justify-content: center; }
 .login { width: 100%; margin: 0; }
 .login h2 { text-align: center; }
+.login-logo { display: block; width: 100%; height: auto; margin: 0 0 16px; border-radius: 8px; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .hint { color: var(--muted); margin: 4px 0 16px; }
 .empty { color: var(--muted); font-style: italic; }
