@@ -7,10 +7,10 @@
 #
 # Flow: prepare (version, tag) -> ci (the whole of ci.yml: tests, shellcheck, PSScriptAnalyzer, real Linux and Windows
 # installs) and archives (scripts/build-release.sh) -> installer (setup.exe built on Windows from the Windows archive,
-# installed and uninstalled as a smoke test) -> publish (fixed-name and legacy copies, SHA256SUMS.txt; a manual run
+# installed and uninstalled as a smoke test) -> publish (fixed-name copies, SHA256SUMS.txt; a manual run
 # creates a draft, replacing a draft left by a failed run, checks that the tag did not move, then publishes it).
 # Nothing is published if any job fails. The release published by this workflow does not start it again (events made
-# with GITHUB_TOKEN start no workflow runs). File names and the legacy copies: scripts/build-release.sh.
+# with GITHUB_TOKEN start no workflow runs). File names: scripts/build-release.sh.
 
 name: Release
 
@@ -198,13 +198,13 @@ jobs:
           name: setup
           path: dist
 
-      - name: Fixed names, legacy names and checksums
+      - name: Fixed names and checksums
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           test -f "dist/foundry-world-backup-$VERSION-setup.exe"
           ./scripts/build-release.sh --finish dist "$VERSION"
-          (cd dist && sha256sum --check --strict --quiet SHA256SUMS.txt && sha256sum --check --strict --quiet SHA256SUMS)
+          (cd dist && sha256sum --check --strict --quiet SHA256SUMS.txt)
           # the release gets exactly the files listed in SHA256SUMS.txt plus SHA256SUMS.txt itself
           { awk '{print "dist/" $2}' dist/SHA256SUMS.txt; echo dist/SHA256SUMS.txt; } > "$RUNNER_TEMP/files.txt"
 
