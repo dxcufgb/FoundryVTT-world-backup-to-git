@@ -35,7 +35,9 @@ the worlds table replaces the proxy's modules table.
   account); `foundryStatus` (`GET <foundry address>/api/status`: the active world, or why Foundry did not answer).
 - `src/admin.js` – the admin page (`/_admin/`, UI files in `src/admin-ui/`: one HTML page whose views are picked by the
   URL fragment, `#/` worlds and `#/schedule`, `#/foundry`, `#/github`, `#/notifications`, `#/password` from the
-  cogwheel menu; the footer holds the version and the update buttons; a per-row checkbox turns a world on/off, a
+  cogwheel menu, which starts with Worlds and highlights the current page; the GitHub page shows a checkmark when a
+  token is set and "Add new token" (a dialog); the footer holds the version and "Check for update", which opens the
+  "Update now / Not now" dialog when a newer release exists; a per-row checkbox turns a world on/off, a
   per-row cogwheel opens the world dialog): JSON API `GET state`, `POST worlds/rescan`, `PUT worlds/<id>`,
   `POST worlds/<id>/backup`, `DELETE worlds/<id>` (forget), `PUT settings`, `POST foundry-test` (Foundry's
   `/api/status` at a typed or the saved address), `PUT token` (format check, GitHub must accept it, then the

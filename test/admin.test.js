@@ -242,6 +242,11 @@ test('the admin page is off (404) without a password and needs a login for the A
     assert.equal((await s.call('GET', 'state')).status, 401);
     assert.equal((await s.call('PUT', 'settings', {})).status, 401);
     assert.equal((await fetch(`${s.url}/_admin/`)).status, 200);
+    // the login page's logo is served without a session, as a PNG
+    const logo = await fetch(`${s.url}/_admin/logo.png`);
+    assert.equal(logo.status, 200);
+    assert.equal(logo.headers.get('content-type'), 'image/png');
+    assert.deepEqual([...new Uint8Array(await logo.arrayBuffer()).slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
     assert.equal((await fetch(`${s.url}/`, { redirect: 'manual' })).status, 302);
     assert.equal((await fetch(`${s.url}/other`)).status, 404);
     assert.equal((await s.login('wrong')).status, 401);
@@ -742,6 +747,20 @@ test('the saved Foundry address decides whether a backup waits for an active wor
     assert.equal(alpha.lastResult, 'skipped');
   } finally {
     await s.close();
+  }
+});
+
+test('the page can tell whether a token is set (the GitHub page shows a checkmark or the field)', async () => {
+  for (const [token, kind] of [['', ''], [TOKEN, 'classic personal access token']]) {
+    const s = await start({ token });
+    try {
+      await s.login();
+      const res = await s.call('GET', 'state');
+      assert.equal(res.data.token.kind, kind, token ? 'a token: its kind' : 'no token: no kind');
+      assert.equal(res.data.token.canChange, true);
+    } finally {
+      await s.close();
+    }
   }
 });
 

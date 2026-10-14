@@ -203,21 +203,24 @@ row's checkbox), repository
 A world whose folder is gone can be **forgotten** there (its settings, status and local git copy are removed; the
 repository on GitHub stays).
 
-The cogwheel in the header leads to the other pages:
+The cogwheel in the header opens the menu of pages (the current one is highlighted): **Worlds** (the table above)
+and
 
 - **Schedule**: the global schedule (every day / every week / every few hours, at a time) and the active-world rule.
 - **Foundry**: the address Foundry answers `/api/status` on (which world is active), saved to `config.json`
   (`foundry.url`), or "do not ask Foundry"; **Test** asks the typed address without saving it (reachable, which
   world is active, or why it did not answer); **Use the installer's address** goes back to `FOUNDRY_URL`.
-- **GitHub**: the token (never shown; a new one is checked with GitHub before it replaces the old one in `env`),
+- **GitHub**: the token (never shown: a checkmark says one is set, and **Add new token** opens a dialog for the next
+  one; a new token is checked with GitHub before it replaces the old one in `env`; without a token the field is on
+  the page),
   **Test setup** (the token, `git`, the data folder, the state folder, Foundry's `/api/status`, the release
   repository for automatic updates and every enabled world's repository: exists / will be created / cannot be
   pushed to / is public), the repository name prefix and whether missing repositories are created.
 - **Notifications**: the recipients and the SMTP server (see below), with a test e-mail.
 - **Admin password**.
 
-The footer shows the installed version, whether a newer release exists, **Check for update** and
-[**Update now**](#update-now).
+The footer shows the installed version, whether a newer release exists, and **Check for update**: when a newer
+release exists it asks whether to [update now](#update-now) (**Update now** / **Not now**).
 
 API rules (for scripts): every call but `POST /_admin/api/login` needs the session cookie; every change also the
 `X-CSRF-Token` header (from the login or state answer) and `Content-Type: application/json`; a request with an
@@ -296,7 +299,7 @@ one-line installer offers the token it downloaded the release with), stored root
 
 ### Update now
 
-The footer's **Update now** asks the installer's own updater to run at once (at most once every two minutes). The
+**Update now** in the dialog of the footer's **Check for update** asks the installer's own updater to run at once (at most once every two minutes). The
 service may only *request* the run: on Linux it rewrites `/etc/foundry-world-backup/update-request`, which a systemd
 path unit watches to start the root update service; on Windows it starts the SYSTEM task `FoundryWorldBackup-UpdateNow`
 (which takes no arguments). The service restarts when a newer release was installed; a running backup is interrupted
