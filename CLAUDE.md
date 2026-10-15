@@ -36,7 +36,8 @@ the worlds table replaces the proxy's modules table.
 - `src/admin.js` – the admin page (`/_admin/`, UI files in `src/admin-ui/`: one HTML page whose views are picked by the
   URL fragment, `#/` worlds and `#/schedule`, `#/foundry`, `#/github`, `#/notifications`, `#/password` from the
   cogwheel menu, which starts with Worlds and highlights the current page; the GitHub page shows a checkmark when a
-  token is set and "Add new token" (a dialog); the footer holds the version and "Check for update", which opens the
+  token is set and "Add new token" (a dialog); logged in, the dark top bar shows the logo; the footer
+  ("Built by Dxcufgb 2026", also on the login page) holds the version and "Check for update", which opens the
   "Update now / Not now" dialog when a newer release exists; a per-row checkbox turns a world on/off, a
   per-row cogwheel opens the world dialog): JSON API `GET state`, `POST worlds/rescan`, `PUT worlds/<id>`,
   `POST worlds/<id>/backup`, `DELETE worlds/<id>` (forget), `PUT settings`, `POST foundry-test` (Foundry's

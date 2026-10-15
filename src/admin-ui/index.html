@@ -10,7 +10,7 @@
 </head>
 <body>
   <header>
-    <h1><a href="#/" id="home-link">Foundry World Backup <span class="sub">administration</span></a></h1>
+    <h1><a href="#/" id="home-link"><img class="brand-logo" id="brand-logo" src="/_admin/logo.png" alt="" hidden><span class="brand-name">Foundry World Backup</span> <span class="sub">Administration</span></a></h1>
     <nav class="top-actions" id="top-actions" hidden aria-label="Settings and session">
       <div class="menu-wrap">
         <button type="button" id="settings-button" class="icon-button secondary" aria-haspopup="menu"
@@ -42,10 +42,13 @@
       <img class="login-logo" src="/_admin/logo.png" width="480" height="136"
         alt="Foundry VTT, arrow to the backup service, arrow to GitHub">
       <h2>Log in</h2>
-      <form id="login-form">
-        <label>Password <input type="password" name="password" autocomplete="current-password" required autofocus></label>
+      <p class="hint">Sign in with the administration password.</p>
+      <form id="login-form" method="post" action="/_admin/">
+        <!-- the page has no user names; this fixed one lets password managers (Chrome's too) save and fill the password -->
+        <input type="text" name="username" autocomplete="username" value="admin" hidden>
+        <label>Password <input type="password" id="login-password" name="password" autocomplete="current-password" required autofocus></label>
         <p class="error" id="login-error" hidden></p>
-        <button type="submit">Log in</button>
+        <button type="submit" class="wide">Log in</button>
       </form>
     </section>
 
@@ -189,6 +192,7 @@
         <p class="back"><a href="#/">← Worlds</a></p>
         <h2>Admin password</h2>
         <form id="password-form">
+          <input type="text" name="username" autocomplete="username" value="admin" hidden>
           <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
           <label>New password <input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
           <label>Repeat new password <input type="password" name="repeat" autocomplete="new-password" minlength="8" required></label>
@@ -198,12 +202,14 @@
     </div>
   </main>
 
+  <!-- logged out: only the credit line; logged in: also the version and "Check for update" -->
   <footer id="app-footer" hidden>
-    <div class="footer-text">
+    <div class="footer-text" id="footer-version" hidden>
       <p id="version-status"></p>
       <p id="version-note" class="small" hidden></p>
     </div>
-    <div class="buttons">
+    <p class="footer-credit">Built by <strong>Dxcufgb</strong> 2026</p>
+    <div class="buttons" id="footer-actions" hidden>
       <button type="button" id="update-check" class="secondary small">Check for update</button>
     </div>
   </footer>

@@ -220,7 +220,10 @@ and
 - **Admin password**.
 
 The footer shows the installed version, whether a newer release exists, and **Check for update**: when a newer
-release exists it asks whether to [update now](#update-now) (**Update now** / **Not now**).
+release exists it asks whether to [update now](#update-now) (**Update now** / **Not now**). The login page's footer only
+has the "Built by Dxcufgb 2026" line; the top bar shows the logo once you are logged in. The login form has a fixed,
+hidden user name (`admin`), so the browser's password manager (Chrome's too) offers to save the password and fills it
+in next time; changing the password updates the saved one.
 
 API rules (for scripts): every call but `POST /_admin/api/login` needs the session cookie; every change also the
 `X-CSRF-Token` header (from the login or state answer) and `Content-Type: application/json`; a request with an
