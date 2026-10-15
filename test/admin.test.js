@@ -241,7 +241,11 @@ test('the admin page is off (404) without a password and needs a login for the A
   try {
     assert.equal((await s.call('GET', 'state')).status, 401);
     assert.equal((await s.call('PUT', 'settings', {})).status, 401);
-    assert.equal((await fetch(`${s.url}/_admin/`)).status, 200);
+    const html = await (await fetch(`${s.url}/_admin/`)).text();
+    // Chrome saves no passwords where it distrusts the certificate: the login page links the admin port's own one
+    assert.match(html, /id="cert-hint" hidden[\s\S]*?href="\/_admin\/certificate.crt"/);
+    // plain HTTP: no certificate to offer
+    assert.equal((await fetch(`${s.url}/_admin/certificate.crt`)).status, 404);
     // the login page's logo is served without a session, as a PNG
     const logo = await fetch(`${s.url}/_admin/logo.png`);
     assert.equal(logo.status, 200);

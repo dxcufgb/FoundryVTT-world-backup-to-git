@@ -874,9 +874,10 @@
     }
   }
 
-  // The certificate download (and how to trust it) on the login page, when the admin port's certificate is
-  // self-signed: Chrome saves no passwords on a page whose certificate it warns about.
-  async function showCertHint() {
+  // The admin port offers its certificate only when it is self-signed; then the login page explains how to trust it,
+  // since Chrome turns its password manager off on a page whose certificate it does not trust.
+  async function showCertificateHint() {
+    if (location.protocol !== 'https:') return;
     try {
       const res = await fetch('/_admin/certificate.crt', { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' });
       $('#cert-hint').hidden = !res.ok;
@@ -915,7 +916,7 @@
   document.addEventListener('DOMContentLoaded', async () => {
     for (const container of document.querySelectorAll('.schedule-fields')) buildScheduleFields(container);
     $('#login-form').addEventListener('submit', login);
-    showCertHint();
+    showCertificateHint();
     $('#logout').addEventListener('click', logout);
     $('#settings-button').addEventListener('click', () => {
       if ($('#settings-menu').hidden) openMenu();

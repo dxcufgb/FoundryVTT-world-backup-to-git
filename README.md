@@ -222,11 +222,12 @@ and
 The footer shows the installed version, whether a newer release exists, and **Check for update**: when a newer
 release exists it asks whether to [update now](#update-now) (**Update now** / **Not now**). The login page's footer only
 has the "Built by Dxcufgb 2026" line; the top bar shows the logo once you are logged in. The login form has a fixed,
-hidden user name (`admin`), so the browser's password manager offers to save the password and fills it in next time;
-changing the password updates the saved one. Chrome does that only on a page whose certificate it trusts (no *Not
-secure* warning), so with the self-signed certificate the login card has **Browser does not offer to save the
-password?**: it links the certificate's authority (`/_admin/certificate.crt`, served without a login) and tells how
-to trust it (see [Trusting the self-signed certificate](#trusting-the-self-signed-certificate)).
+hidden user name (`admin`), so the browser's password manager (Chrome's too) offers to save the password and fills it
+in next time; changing the password updates the saved one. Chrome (and Edge) save and fill passwords only on pages
+whose certificate they trust: with the self-signed certificate they never offer it until you
+[trust the certificate](#trusting-the-certificate); the login page says so and links the certificate
+(`GET /_admin/certificate.crt`, no login needed: the self-signed certificate, never the key; `404` for a certificate
+from a real CA and on plain HTTP). A real certificate needs nothing.
 
 API rules (for scripts): every call but `POST /_admin/api/login` needs the session cookie; every change also the
 `X-CSRF-Token` header (from the login or state answer) and `Content-Type: application/json`; a request with an
@@ -239,30 +240,30 @@ optional: without it the address in use), `PUT token`, `POST setup-test`, `PUT n
 ### The admin page on a public address
 
 The page is served on `ADMIN_HOST` (all addresses) with a self-signed certificate for this machine's names and
-addresses (`ADMIN_PUBLIC_URL`'s host is added; `--renew-admin-cert` makes a new one, see below). For a real certificate set
+addresses (`ADMIN_PUBLIC_URL`'s host is added; `--renew-admin-cert` makes a new one). For a real certificate set
 `ADMIN_TLS_CERT`/`ADMIN_TLS_KEY`, or put a reverse proxy in front with `ADMIN_TLS=off`, `ADMIN_HOST=127.0.0.1`,
 `ADMIN_TRUST_PROXY=1` (so the client address behind `X-Forwarded-For` is the one locked out, and the cookie is
 `Secure` behind `X-Forwarded-Proto: https`) and the public name in `ADMIN_HOSTS` or `ADMIN_PUBLIC_URL`.
 
-### Trusting the self-signed certificate
+### Trusting the certificate
 
-Browsers warn about the self-signed certificate until it is trusted, and Chrome neither saves nor fills passwords on
-such a page. The installer's certificate is a pair: a certificate authority made for it alone signs the page's
-certificate, and its private key is thrown away at once, so trusting it trusts this admin page and nothing else.
-Download it from the login card (**Browser does not offer to save the password?**, or `/_admin/certificate.crt`),
-compare its SHA-256 fingerprint with the one the installer printed if you like, and add it to the computer's trusted
-certificates:
+Browsers save no passwords on a page whose certificate they do not trust (Chrome and Edge turn their password manager
+off after a certificate warning), so to have the admin password saved, make the browser trust the service's
+self-signed certificate. Download it with **Download the certificate** on the login page
+(`https://<this machine>:8484/_admin/certificate.crt`; it is the same `admin-tls.crt` the installer wrote) and check
+that its SHA-256 fingerprint is the one the installer printed. Then, on each computer that opens the page:
 
-- **Windows**: open the file, **Install Certificate**, **Local Machine**, **Place all certificates in the following
-  store**: **Trusted Root Certification Authorities**.
-- **macOS**: open the file (Keychain Access, **System** keychain), open the certificate, **Trust**: **Always Trust**.
-- **Linux, ChromeOS**: `chrome://certificate-manager`, **Local certificates**, **Installed by you**, **Trusted
-  certificates**: **Import**.
+- **Windows** (Chrome, Edge): open the file → **Install Certificate…** → *Current User* → *Place all certificates in the
+  following store* → **Trusted Root Certification Authorities** → **Finish** and confirm.
+- **macOS** (Chrome, Safari): open the file (Keychain Access adds it to *login*), double-click the certificate, under
+  **Trust** set *When using this certificate* to **Always Trust**.
+- **Linux** (Chrome): `certutil -d sql:$HOME/.pki/nssdb -A -t "P,," -n foundry-world-backup -i foundry-world-backup.crt`
+  (`certutil` is in `libnss3-tools`). Firefox: *Settings → Privacy & Security → View Certificates… → Servers → Add
+  Exception…*.
 
-Then restart the browser and open the page by a name or address the certificate was made for (this machine's name,
-`<name>.local`, its addresses, `localhost`, `ADMIN_PUBLIC_URL`'s host). `--renew-admin-cert` (`-RenewAdminCert`) makes
-a new pair, which has to be trusted again. Certificates of version 0.2.3 and older (a lone self-signed one, which browsers
-cannot be told to trust this way) are replaced by the next upgrade.
+Restart the browser and open the page with a name or address the certificate holds (the ones the installer printed),
+log in, and the browser offers to save the password. A renewed certificate (`--renew-admin-cert`) has to be trusted
+again. If the browser still does not ask, the site may be on its *Never saved* list (Chrome: *Settings → Passwords*).
 
 ## How a backup works
 
@@ -363,6 +364,8 @@ in step with the job names in `ci.yml` and `security.yml`.
 
 ## Troubleshooting
 
+- **The browser never offers to save the admin password**: it does not trust the self-signed certificate; see
+  [Trusting the certificate](#trusting-the-certificate).
 - **A world shows "Not readable"**: the service user cannot read its folder. Linux: `sudo ./install.sh --grant-access`
   (needs the `acl` package), or reinstall with `--run-as <the Foundry user>`. Windows: `install-service.ps1 -GrantAccess`.
 - **"the token has not been confirmed yet"**: GitHub has not told the service whose token this is (no network, or a

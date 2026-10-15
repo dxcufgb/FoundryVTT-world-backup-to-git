@@ -8,6 +8,7 @@ const http = require('node:http');
 const https = require('node:https');
 const net = require('node:net');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { createAdmin, loadAdminSettings, rewriteFile, replaceEnvValue, tokenKind, SettingsError } = require('./admin.js');
@@ -347,7 +348,9 @@ function createApp({
   }
 
   // The admin listener serves the admin page only; "/" leads to it.
-  async function adminRoute(req, res) {
+  // certificate: the admin port's own self-signed certificate (PEM), offered at /_admin/certificate.crt so browsers can
+  // be told to trust it (Chrome saves no passwords on a page whose certificate it does not trust).
+  async function adminRoute(req, res, certificate) {
     let pathname;
     try {
       pathname = new URL(req.url, 'http://backup').pathname;
@@ -355,7 +358,7 @@ function createApp({
       return send(res, 404, 'not found');
     }
     if (pathname === '/') return send(res, 302, 'see /_admin/', { Location: '/_admin/' });
-    if (adminPage && adminPage.handles(pathname)) return adminPage.handle(req, res, pathname);
+    if (adminPage && adminPage.handles(pathname)) return adminPage.handle(req, res, pathname, { certificate });
     return send(res, 404, 'not found');
   }
 
@@ -371,9 +374,12 @@ function createApp({
   // tls { cert, key }: HTTPS on the admin port, where a plain-HTTP request gets a redirect to https:// (like Webmin);
   // no tls: plain HTTP (behind a reverse proxy that does HTTPS).
   function createAdminServer(tls) {
-    if (adminPage) adminPage.setCertificate(tls ? tls.cert : null);
     if (!tls) return http.createServer(wrap(adminRoute));
-    const secure = https.createServer({ ...tls, minVersion: 'TLSv1.2' }, wrap(adminRoute));
+    const certificate = selfSignedPem(tls.cert);
+    const secure = https.createServer(
+      { ...tls, minVersion: 'TLSv1.2' },
+      wrap((req, res) => adminRoute(req, res, certificate)),
+    );
     const redirect = http.createServer((req, res) => {
       const host = /^[A-Za-z0-9.:[\]-]+$/.test(req.headers.host || '') ? req.headers.host : null;
       if (!host) return send(res, 400, 'use https://');
@@ -413,6 +419,17 @@ function createApp({
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
+
+// The certificate as PEM when it is self-signed (the installers' or a temporary one), else null: a certificate from a
+// real CA is trusted already and is not offered for download. Only the certificate, never the key.
+function selfSignedPem(cert) {
+  try {
+    const x509 = new crypto.X509Certificate(cert);
+    return x509.subject === x509.issuer && x509.verify(x509.publicKey) ? x509.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
 // Certificate for the admin port: ADMIN_TLS_CERT/ADMIN_TLS_KEY (default admin-tls.crt/.key next to config.json, made
 // by the installers). Without those files a temporary self-signed one is made (it changes on every restart).

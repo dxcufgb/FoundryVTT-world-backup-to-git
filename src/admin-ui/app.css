@@ -173,6 +173,8 @@ body.logged-out main { display: flex; align-items: center; justify-content: cent
 .login-logo { display: block; width: 100%; height: auto; margin: 0 0 16px; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .hint { color: var(--muted); margin: 4px 0 16px; }
+.cert-hint { font-size: 0.88em; margin: 18px 0 0; }
+.cert-hint a { color: var(--accent); }
 .empty { color: var(--muted); font-style: italic; }
 label { display: block; margin-bottom: 12px; font-weight: 500; }
 label small { display: block; font-weight: 400; color: var(--muted); }
@@ -320,8 +322,3 @@ body.logged-out { background: linear-gradient(180deg, var(--header-bg) 0, var(--
 #login-view { box-shadow: var(--shadow-lg); border-top: 4px solid var(--accent); padding: 32px; }
 #login-view h2 { font-size: 1.3rem; margin-top: 4px; }
 #login-view .hint { margin-bottom: 20px; }
-#login-view .cert-hint { margin: 20px 0 0; font-size: 0.9rem; color: var(--muted); }
-#login-view .cert-hint summary { margin-bottom: 0; }
-#login-view .cert-hint p { margin: 8px 0; }
-#login-view .cert-hint ul { margin: 0; padding-left: 20px; }
-#login-view .cert-hint li { margin-bottom: 4px; }
