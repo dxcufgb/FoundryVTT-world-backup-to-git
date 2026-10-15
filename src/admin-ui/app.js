@@ -874,6 +874,18 @@
     }
   }
 
+  // The admin port offers its certificate only when it is self-signed; then the login page explains how to trust it,
+  // since Chrome turns its password manager off on a page whose certificate it does not trust.
+  async function showCertificateHint() {
+    if (location.protocol !== 'https:') return;
+    try {
+      const res = await fetch('/_admin/certificate.crt', { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' });
+      $('#cert-hint').hidden = !res.ok;
+    } catch {
+      // no hint
+    }
+  }
+
   async function login(e) {
     e.preventDefault();
     const form = e.currentTarget;
@@ -904,6 +916,7 @@
   document.addEventListener('DOMContentLoaded', async () => {
     for (const container of document.querySelectorAll('.schedule-fields')) buildScheduleFields(container);
     $('#login-form').addEventListener('submit', login);
+    showCertificateHint();
     $('#logout').addEventListener('click', logout);
     $('#settings-button').addEventListener('click', () => {
       if ($('#settings-menu').hidden) openMenu();

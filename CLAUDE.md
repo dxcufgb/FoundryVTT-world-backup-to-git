@@ -16,7 +16,8 @@ the worlds table replaces the proxy's modules table.
   rewrites `update-request`, which the installer's systemd path unit watches; Windows `taskUpdateTrigger` runs the
   SYSTEM task `FoundryWorldBackup-UpdateNow`). `readEnv` validates the environment; `main()` only runs when executed
   directly and opens the admin listener (`createAdminServer(tls)`: HTTPS, a plain-HTTP first byte gets a 301 to
-  https://, `/` → `/_admin/`, nothing else is served).
+  https://, `/` → `/_admin/`, and a self-signed certificate (only the certificate) at `/_admin/certificate.crt`,
+  which the login page links (Chrome saves no passwords on an untrusted certificate); nothing else is served).
 - `src/config.js` – `config.json`: schedule (`hourly`/`daily`/`weekly`), `github` (`repoPrefix`, `createRepos`),
   `whenActive`, `foundry.url` (Foundry's address from the admin page; unset = `FOUNDRY_URL`, `""` = off), per-world
   settings (`enabled`, `repo`, `schedule`, `whenActive`; unlisted worlds get the defaults).

@@ -50,6 +50,13 @@
         <p class="error" id="login-error" hidden></p>
         <button type="submit" class="wide">Log in</button>
       </form>
+      <!-- shown only with the admin port's self-signed certificate (app.js): Chrome saves no passwords until it trusts
+        the certificate -->
+      <p class="hint cert-hint" id="cert-hint" hidden>Browser not offering to save the password? Browsers only save
+        passwords on pages whose certificate they trust, and this page uses the service's own.
+        <a href="/_admin/certificate.crt" download="foundry-world-backup.crt">Download the certificate</a>, add it to
+        your trusted certificates (<a href="https://github.com/dxcufgb/FoundryVTT-world-backup-to-git#trusting-the-certificate"
+        target="_blank" rel="noopener noreferrer">how</a>), then restart the browser.</p>
     </section>
 
     <div id="app-view" hidden>
