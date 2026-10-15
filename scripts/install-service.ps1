@@ -322,10 +322,11 @@ function Write-AdminInfo {
     if ($public) { Write-BackupLog "        $public (public address)" }
     if ($scheme -eq 'https' -and (Test-Path -LiteralPath $AdminCert)) {
         try {
-            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList $AdminCert
-            Write-BackupLog "        self-signed certificate: the browser warns once; SHA-1 thumbprint $($cert.Thumbprint)"
+            $fingerprint = & $node (Join-Path $AppDir 'src\selfsigned.js') --fingerprint $AdminCert
+            if ($LASTEXITCODE -ne 0) { throw 'no fingerprint' }
+            Write-BackupLog "        self-signed certificate: the browser warns until you trust its certificate authority (the login page links it), SHA-256 fingerprint $fingerprint"
         }
-        catch { Write-BackupLog '        self-signed certificate: the browser warns once' }
+        catch { Write-BackupLog '        self-signed certificate: the browser warns until you trust its certificate authority (the login page links it)' }
     }
 }
 

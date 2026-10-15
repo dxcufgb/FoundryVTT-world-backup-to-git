@@ -17,7 +17,11 @@
 //   node src/selfsigned.js --outdated CERT_FILE
 //
 // exit 0 when CERT_FILE is a lone self-signed certificate made by an older version (it cannot be trusted that way;
-// the installers make a new one), 1 when not. No dependencies: built-in crypto, fs and os only.
+// the installers make a new one), 1 when not.
+//
+//   node src/selfsigned.js --fingerprint CERT_FILE
+//
+// prints the SHA-256 fingerprint of the authority to trust (the first certificate's when there is none). No dependencies: built-in crypto, fs and os only.
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -238,8 +242,21 @@ function outdated(text) {
 }
 
 // CLI entry point: writes CERT_FILE/KEY_FILE for the given names and prints the authority's fingerprint, or answers
-// --outdated CERT_FILE.
+// --outdated / --fingerprint CERT_FILE.
 function cli(argv) {
+  if (argv[0] === '--fingerprint') {
+    try {
+      const text = fs.readFileSync(argv[1], 'utf8');
+      const anchor = trustAnchor(text);
+      const x = anchor ? new crypto.X509Certificate(anchor) : parseCertificates(text)[0];
+      if (!x) throw new Error('no certificate');
+      console.log(x.fingerprint256);
+      return 0;
+    } catch {
+      console.error('usage: node src/selfsigned.js --fingerprint CERT_FILE (a readable certificate file)');
+      return 1;
+    }
+  }
   if (argv[0] === '--outdated') {
     if (!argv[1]) {
       console.error('usage: node src/selfsigned.js --outdated CERT_FILE');
