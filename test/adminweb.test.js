@@ -54,11 +54,11 @@ async function start({ tls, trustProxy = false, hosts = [] } = {}) {
 }
 
 // One request over http or https (certificate pinned to ours); returns { status, headers, body }.
-function request(scheme, port, pathname, { method = 'GET', headers = {}, body, ca } = {}) {
+function request(scheme, port, pathname, { method = 'GET', headers = {}, body, ca, rejectUnauthorized } = {}) {
   return new Promise((resolve, reject) => {
     const mod = scheme === 'https' ? https : http;
     const req = mod.request(
-      { host: '127.0.0.1', port, path: pathname, method, headers, ca, servername: 'localhost' },
+      { host: '127.0.0.1', port, path: pathname, method, headers, ca, rejectUnauthorized, servername: 'localhost' },
       (res) => {
         let data = '';
         res.on('data', (c) => (data += c));
@@ -115,6 +115,58 @@ test('the admin port serves the admin page over HTTPS and nothing else', async (
     res = await request('http', s.port, '/anything', { headers: { Host: 'pi.local:8484' } });
     assert.equal(res.status, 301);
     assert.equal(res.headers.location, 'https://pi.local:8484/_admin/');
+  } finally {
+    await s.close();
+  }
+});
+
+test('the admin port offers its self-signed certificate (never the key) so browsers can be told to trust it', async () => {
+  certs = certs || createSelfSigned(['localhost', '127.0.0.1']);
+  const s = await start({ tls: certs });
+  try {
+    const ca = certs.cert;
+    let res = await request('https', s.port, '/_admin/certificate.crt', { headers: { Host: 'localhost' }, ca });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers['content-type'], 'application/x-x509-ca-cert');
+    assert.match(res.headers['content-disposition'], /attachment; filename="foundry-world-backup.crt"/);
+    assert.equal(res.headers['cache-control'], 'no-store');
+    assert.equal(new crypto.X509Certificate(res.body).fingerprint256, new crypto.X509Certificate(certs.cert).fingerprint256);
+    assert.doesNotMatch(res.body, /PRIVATE KEY/);
+    res = await request('https', s.port, '/_admin/certificate.crt', { method: 'HEAD', headers: { Host: 'localhost' }, ca });
+    assert.equal(res.status, 200);
+    res = await request('https', s.port, '/_admin/certificate.crt', { method: 'POST', headers: { Host: 'localhost' }, ca });
+    assert.equal(res.status, 405);
+    res = await request('https', s.port, '/_admin/certificate.crt', { headers: { Host: 'evil.example' }, ca });
+    assert.equal(res.status, 403);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a certificate that is not self-signed (a real CA\'s) is not offered for download', async () => {
+  const own = createSelfSigned(['localhost', '127.0.0.1']);
+  // same names, but the signature no longer matches its own key: as for a certificate signed by someone else
+  const der = Buffer.from(own.cert.replace(/-----[^-]+-----|\s/g, ''), 'base64');
+  der[der.length - 1] ^= 0x01;
+  const b64 = der.toString('base64').replace(/.{1,64}/g, '$&\n');
+  const cert = `-----BEGIN CERTIFICATE-----\n${b64}-----END CERTIFICATE-----\n`;
+  const s = await start({ tls: { cert, key: own.key } });
+  try {
+    const res = await request('https', s.port, '/_admin/certificate.crt', {
+      headers: { Host: 'localhost' },
+      rejectUnauthorized: false,
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a plain-HTTP admin port (behind a reverse proxy) offers no certificate', async () => {
+  const s = await start({});
+  try {
+    const res = await request('http', s.port, '/_admin/certificate.crt', { headers: { Host: 'localhost' } });
+    assert.equal(res.status, 404);
   } finally {
     await s.close();
   }

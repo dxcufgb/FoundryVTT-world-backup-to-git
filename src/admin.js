@@ -727,7 +727,8 @@ function createAdmin({
     /** True for every path below /_admin (answered here, or 404 while the page is off). */
     handles: (pathname) => pathname === PREFIX || pathname.startsWith(`${PREFIX}/`),
 
-    async handle(req, res, pathname) {
+    // certificate: the admin port's self-signed certificate (PEM) when the request came in over HTTPS, else undefined.
+    async handle(req, res, pathname, { certificate } = {}) {
       if (!enabled()) return send(res, 404, 'not found', { 'Content-Type': 'text/plain; charset=utf-8' });
       if (!hostAllowed(hostOf(req.headers.host || ''))) {
         return send(res, 403, 'admin page: unknown host name (see ADMIN_HOSTS in the README)', {
@@ -740,6 +741,15 @@ function createAdmin({
           return send(res, 405, 'method not allowed', { Allow: 'GET, HEAD' });
         }
         return send(res, 200, req.method === 'HEAD' ? undefined : ui[route].body, { 'Content-Type': ui[route].type });
+      }
+      if (route === '/certificate.crt' && certificate) {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          return send(res, 405, 'method not allowed', { Allow: 'GET, HEAD' });
+        }
+        return send(res, 200, req.method === 'HEAD' ? undefined : certificate, {
+          'Content-Type': 'application/x-x509-ca-cert',
+          'Content-Disposition': 'attachment; filename="foundry-world-backup.crt"',
+        });
       }
       if (!route.startsWith('/api/')) return send(res, 404, 'not found', { 'Content-Type': 'text/plain; charset=utf-8' });
       try {

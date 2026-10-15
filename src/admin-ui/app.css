@@ -173,6 +173,8 @@ body.logged-out main { display: flex; align-items: center; justify-content: cent
 .login-logo { display: block; width: 100%; height: auto; margin: 0 0 16px; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .hint { color: var(--muted); margin: 4px 0 16px; }
+.cert-hint { font-size: 0.88em; margin: 18px 0 0; }
+.cert-hint a { color: var(--accent); }
 .empty { color: var(--muted); font-style: italic; }
 label { display: block; margin-bottom: 12px; font-weight: 500; }
 label small { display: block; font-weight: 400; color: var(--muted); }
