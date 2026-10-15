@@ -47,7 +47,11 @@ the worlds table replaces the proxy's modules table.
   in `config.json`. CLI: `setup FILE` (installers; secrets via `FOUNDRY_BACKUP_*` env), `check FILE`.
 - `src/mailer.js` – minimal SMTP client (STARTTLS / TLS / plain relay, AUTH PLAIN/LOGIN only over TLS).
   `src/notify.js` – `--service-env FILE --subject --message`: mails the `admin.json` recipients; used by the service
-  and the auto-update scripts. `src/selfsigned.js` – ECDSA P-256 self-signed certificate built with `node:crypto`.
+  and the auto-update scripts. `src/selfsigned.js` – ECDSA P-256 self-signed certificates built with `node:crypto`: a
+  one-use certificate authority (its key is never written) signs the admin port's certificate; `admin-tls.crt` holds
+  both. Chrome saves no passwords on a page with a certificate warning, so `/_admin/certificate.crt` (no login)
+  serves that authority (`trustAnchor`: only from such a chain) and the login card tells how to trust it. CLI
+  `--outdated` (a lone certificate of 0.2.3 or older: the installers replace it), `--fingerprint` (the authority's).
 - `src/updater.js` – self-update helper (`--check` / `--download` the latest release:
   `foundry-world-backup-<version>-linux.tar.gz` / `-windows.zip`, verified against `SHA256SUMS.txt`). Exit 0 = up to
   date, 10 = update available/downloaded, 1 = error. Installing is left to the scripts.
