@@ -371,6 +371,7 @@ function createApp({
   // tls { cert, key }: HTTPS on the admin port, where a plain-HTTP request gets a redirect to https:// (like Webmin);
   // no tls: plain HTTP (behind a reverse proxy that does HTTPS).
   function createAdminServer(tls) {
+    if (adminPage) adminPage.setCertificate(tls ? tls.cert : null);
     if (!tls) return http.createServer(wrap(adminRoute));
     const secure = https.createServer({ ...tls, minVersion: 'TLSv1.2' }, wrap(adminRoute));
     const redirect = http.createServer((req, res) => {

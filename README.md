@@ -222,8 +222,11 @@ and
 The footer shows the installed version, whether a newer release exists, and **Check for update**: when a newer
 release exists it asks whether to [update now](#update-now) (**Update now** / **Not now**). The login page's footer only
 has the "Built by Dxcufgb 2026" line; the top bar shows the logo once you are logged in. The login form has a fixed,
-hidden user name (`admin`), so the browser's password manager (Chrome's too) offers to save the password and fills it
-in next time; changing the password updates the saved one.
+hidden user name (`admin`), so the browser's password manager offers to save the password and fills it in next time;
+changing the password updates the saved one. Chrome does that only on a page whose certificate it trusts (no *Not
+secure* warning), so with the self-signed certificate the login card has **Browser does not offer to save the
+password?**: it links the certificate's authority (`/_admin/certificate.crt`, served without a login) and tells how
+to trust it (see [Trusting the self-signed certificate](#trusting-the-self-signed-certificate)).
 
 API rules (for scripts): every call but `POST /_admin/api/login` needs the session cookie; every change also the
 `X-CSRF-Token` header (from the login or state answer) and `Content-Type: application/json`; a request with an
@@ -236,10 +239,30 @@ optional: without it the address in use), `PUT token`, `POST setup-test`, `PUT n
 ### The admin page on a public address
 
 The page is served on `ADMIN_HOST` (all addresses) with a self-signed certificate for this machine's names and
-addresses (`ADMIN_PUBLIC_URL`'s host is added; `--renew-admin-cert` makes a new one). For a real certificate set
+addresses (`ADMIN_PUBLIC_URL`'s host is added; `--renew-admin-cert` makes a new one, see below). For a real certificate set
 `ADMIN_TLS_CERT`/`ADMIN_TLS_KEY`, or put a reverse proxy in front with `ADMIN_TLS=off`, `ADMIN_HOST=127.0.0.1`,
 `ADMIN_TRUST_PROXY=1` (so the client address behind `X-Forwarded-For` is the one locked out, and the cookie is
 `Secure` behind `X-Forwarded-Proto: https`) and the public name in `ADMIN_HOSTS` or `ADMIN_PUBLIC_URL`.
+
+### Trusting the self-signed certificate
+
+Browsers warn about the self-signed certificate until it is trusted, and Chrome neither saves nor fills passwords on
+such a page. The installer's certificate is a pair: a certificate authority made for it alone signs the page's
+certificate, and its private key is thrown away at once, so trusting it trusts this admin page and nothing else.
+Download it from the login card (**Browser does not offer to save the password?**, or `/_admin/certificate.crt`),
+compare its SHA-256 fingerprint with the one the installer printed if you like, and add it to the computer's trusted
+certificates:
+
+- **Windows**: open the file, **Install Certificate**, **Local Machine**, **Place all certificates in the following
+  store**: **Trusted Root Certification Authorities**.
+- **macOS**: open the file (Keychain Access, **System** keychain), open the certificate, **Trust**: **Always Trust**.
+- **Linux, ChromeOS**: `chrome://certificate-manager`, **Local certificates**, **Installed by you**, **Trusted
+  certificates**: **Import**.
+
+Then restart the browser and open the page by a name or address the certificate was made for (this machine's name,
+`<name>.local`, its addresses, `localhost`, `ADMIN_PUBLIC_URL`'s host). `--renew-admin-cert` (`-RenewAdminCert`) makes
+a new pair, which has to be trusted again. Certificates of version 0.2.3 and older (a lone self-signed one, which browsers
+cannot be told to trust this way) are replaced by the next upgrade.
 
 ## How a backup works
 

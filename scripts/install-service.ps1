@@ -244,9 +244,14 @@ function Write-EnvValue([string]$Key, [string]$Value) {
 # True when ADMIN_TLS turns HTTPS off for the admin page.
 function Test-TlsOff { (Get-EnvValue 'ADMIN_TLS') -match '^(off|0|false|no)$' }
 
-# Self-signed certificate for the admin page (made once; -Force makes a new one); LOCAL SERVICE may only read it.
+# Self-signed certificate for the admin page (made once; -Force makes a new one; a lone one of an older version is
+# replaced, since browsers cannot trust it); LOCAL SERVICE may only read it.
 function Write-AdminCert([string]$Node, [switch]$Force) {
-    if ((Test-Path -LiteralPath $AdminCert) -and (Test-Path -LiteralPath $AdminKey) -and -not $Force) { return }
+    if ((Test-Path -LiteralPath $AdminCert) -and (Test-Path -LiteralPath $AdminKey) -and -not $Force) {
+        & $Node (Join-Path $AppDir 'src\selfsigned.js') --outdated $AdminCert
+        if ($LASTEXITCODE -ne 0) { return }
+        Write-BackupLog "Renewing the admin page's certificate, so browsers can trust it (see the admin page's login card)."
+    }
     $names = @()
     $public = Get-EnvValue 'ADMIN_PUBLIC_URL'
     if ($public) { $names += ([Uri]$public).Host }

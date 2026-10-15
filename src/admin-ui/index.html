@@ -50,6 +50,22 @@
         <p class="error" id="login-error" hidden></p>
         <button type="submit" class="wide">Log in</button>
       </form>
+      <!-- shown when the admin port has a self-signed certificate (app.js asks for it) -->
+      <details class="cert-hint" id="cert-hint" hidden>
+        <summary>Browser does not offer to save the password?</summary>
+        <p>Chrome only saves and fills passwords on a page whose certificate it trusts (no <em>Not secure</em> warning in
+          the address bar). <a href="/_admin/certificate.crt" download>Download this page's certificate</a>, add it to
+          the trusted certificates of your computer, restart the browser and open the page again by this machine's
+          name or address:</p>
+        <ul>
+          <li><strong>Windows</strong>: open the file, <em>Install Certificate</em>, <em>Local Machine</em>, <em>Place
+            all certificates in</em> <em>Trusted Root Certification Authorities</em>.</li>
+          <li><strong>macOS</strong>: open the file (Keychain Access, <em>System</em> keychain), then in the
+            certificate's <em>Trust</em> section <em>Always Trust</em>.</li>
+          <li><strong>Linux, ChromeOS</strong>: <em>chrome://certificate-manager</em>, <em>Local certificates</em>,
+            <em>Installed by you</em>, import it under <em>Trusted certificates</em>.</li>
+        </ul>
+      </details>
     </section>
 
     <div id="app-view" hidden>

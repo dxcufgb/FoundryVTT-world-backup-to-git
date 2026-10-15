@@ -12,7 +12,7 @@ const crypto = require('node:crypto');
 const { createApp } = require('../src/server.js');
 const { hashPassword, parseAdminSettings, serializeAdminSettings, defaultNotify } = require('../src/admin.js');
 const { parseConfig } = require('../src/config.js');
-const { createSelfSigned, defaultNames } = require('../src/selfsigned.js');
+const { createSelfSigned, defaultNames, trustAnchor, outdated } = require('../src/selfsigned.js');
 
 const PASSWORD = 'correct horse battery';
 
@@ -80,24 +80,56 @@ const login = (scheme, port, opts = {}) =>
     ca: opts.ca,
   });
 
-test('the self-signed certificate is valid X.509 for the given names and matches its key', () => {
-  const { cert, key } = createSelfSigned(['localhost', '127.0.0.1', '::1', 'pi.local']);
-  const x = new crypto.X509Certificate(cert);
-  assert.equal(x.verify(x.publicKey), true);
+test('the self-signed certificate is valid X.509 for the given names, signed by its own authority', () => {
+  const { cert, key, ca } = createSelfSigned(['localhost', '127.0.0.1', '::1', 'pi.local']);
+  const x = new crypto.X509Certificate(cert); // the first of the chain: the page's certificate
+  const root = new crypto.X509Certificate(ca);
+  assert.equal(x.ca, false);
+  assert.equal(x.verify(root.publicKey), true);
+  assert.equal(x.checkIssued(root), true);
+  assert.equal(root.ca, true);
+  assert.equal(root.verify(root.publicKey), true);
+  assert.match(root.subject, /CN=Foundry World Backup on pi\.local \(\d{4}-\d\d-\d\d\)/);
+  assert.ok(cert.endsWith(ca));
   assert.equal(x.checkPrivateKey(crypto.createPrivateKey(key)), true);
+  assert.equal(root.checkPrivateKey(crypto.createPrivateKey(key)), false);
   assert.equal(x.checkHost('pi.local'), 'pi.local');
   assert.equal(x.checkIP('127.0.0.1'), '127.0.0.1');
   assert.equal(x.checkIP('::1'), '::1');
   assert.ok(new Date(x.validTo) > new Date(Date.now() + 365 * 24 * 3600 * 1000));
   const names = defaultNames(['admin.example.com']);
   assert.ok(names.includes('localhost') && names.includes('admin.example.com') && names.includes(os.hostname().toLowerCase()));
+  // the authority to trust: only from such a chain, never a lone or a foreign certificate
+  assert.equal(trustAnchor(cert), ca);
+  assert.equal(trustAnchor(ca), null);
+  assert.equal(trustAnchor(cert.slice(0, cert.length - ca.length)), null);
+  assert.equal(trustAnchor(cert.slice(0, cert.length - ca.length) + createSelfSigned(['localhost']).ca), null);
+  assert.equal(trustAnchor('nonsense'), null);
+  assert.equal(outdated(cert), false);
+});
+
+test('a lone self-signed certificate of an older version is outdated (the installers renew it)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fwb-cert-'));
+  const file = path.join(dir, 'admin-tls.crt');
+  // the old format, as test/fixtures/old-admin-tls.crt (made by version 0.2.3): one self-signed, non-CA certificate
+  const old = fs.readFileSync(path.join(__dirname, 'fixtures', 'old-admin-tls.crt'), 'utf8');
+  assert.equal(outdated(old), true);
+  // the same, but someone else's (not the installer's own): left alone
+  assert.equal(outdated(fs.readFileSync(path.join(__dirname, 'fixtures', 'other-self-signed.crt'), 'utf8')), false);
+  const run = (f) => require('node:child_process').spawnSync(process.execPath,
+    [path.join(__dirname, '..', 'src', 'selfsigned.js'), '--outdated', f]).status;
+  fs.writeFileSync(file, old);
+  assert.equal(run(file), 0);
+  fs.writeFileSync(file, createSelfSigned(['localhost']).cert);
+  assert.equal(run(file), 1);
+  assert.equal(run(path.join(dir, 'missing.crt')), 1);
 });
 
 test('the admin port serves the admin page over HTTPS and nothing else', async () => {
   certs = certs || createSelfSigned(['localhost', '127.0.0.1']);
   const s = await start({ tls: certs });
   try {
-    const ca = certs.cert;
+    const ca = certs.ca;
     let res = await request('https', s.port, '/', { headers: { Host: 'localhost' }, ca });
     assert.equal(res.status, 302);
     assert.equal(res.headers.location, '/_admin/');
@@ -120,11 +152,51 @@ test('the admin port serves the admin page over HTTPS and nothing else', async (
   }
 });
 
+test('the certificate\'s own authority is offered for download (Chrome saves passwords only on a trusted page)', async () => {
+  certs = certs || createSelfSigned(['localhost', '127.0.0.1']);
+  const s = await start({ tls: certs });
+  try {
+    const ca = certs.ca;
+    let res = await request('https', s.port, '/_admin/certificate.crt', { headers: { Host: 'localhost' }, ca });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers['content-type'], 'application/x-x509-ca-cert');
+    assert.match(res.headers['content-disposition'], /^attachment; filename="foundry-world-backup\.crt"$/);
+    assert.equal(res.headers['cache-control'], 'no-store');
+    assert.equal(res.body, certs.ca);
+    assert.doesNotMatch(res.body, /PRIVATE KEY/);
+    res = await request('https', s.port, '/_admin/certificate.crt', { method: 'HEAD', headers: { Host: 'localhost' }, ca });
+    assert.equal(res.status, 200);
+    res = await request('https', s.port, '/_admin/certificate.crt', { method: 'POST', headers: { Host: 'localhost' }, ca });
+    assert.equal(res.status, 405);
+    res = await request('https', s.port, '/_admin/certificate.crt', { headers: { Host: 'evil.example' }, ca });
+    assert.equal(res.status, 403);
+  } finally {
+    await s.close();
+  }
+  // a lone certificate (an older self-signed one, or a real one without its chain): nothing to download
+  const lone = createSelfSigned(['localhost']);
+  const leafOnly = await start({ tls: { cert: lone.cert.slice(0, lone.cert.length - lone.ca.length), key: lone.key } });
+  try {
+    const res = await request('https', leafOnly.port, '/_admin/certificate.crt', { headers: { Host: 'localhost' }, ca: lone.ca });
+    assert.equal(res.status, 404);
+  } finally {
+    await leafOnly.close();
+  }
+  // no certificate (plain HTTP behind a reverse proxy): nothing to download
+  const plain = await start();
+  try {
+    const res = await request('http', plain.port, '/_admin/certificate.crt', { headers: { Host: 'localhost' } });
+    assert.equal(res.status, 404);
+  } finally {
+    await plain.close();
+  }
+});
+
 test('the admin port accepts this machine\'s own names and addresses, not foreign ones', async () => {
   certs = certs || createSelfSigned(['localhost', '127.0.0.1']);
   const s = await start({ tls: certs });
   try {
-    const ca = certs.cert;
+    const ca = certs.ca;
     const status = async (host) => (await request('https', s.port, '/_admin/', { headers: { Host: host }, ca })).status;
     assert.equal(await status(`${os.hostname().toLowerCase()}:8484`), 200);
     const ipv4 = Object.values(os.networkInterfaces()).flat().find((a) => a && a.family === 'IPv4');
