@@ -1,6 +1,8 @@
 # CodeRabbit settings for FoundryVTT-world-backup-to-git.
 # Shared rules come from the central dxcufgb/coderabbit repository (inheritance: true), and CodeRabbit reads
 # CLAUDE.md (and its Review focus) as code guidelines. Only what is specific to this repository is here.
+# Paths here must not repeat a central path (scripts/**/*.js, .github/workflows/**, **/*.sh, **/*.ps1, **/*.iss,
+# module.json, **/*.md): an entry with the same path replaces the central one instead of adding to it.
 # Check the merged result on a pull request with: @coderabbitai configuration
 inheritance: true
 
