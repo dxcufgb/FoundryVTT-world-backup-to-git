@@ -10,7 +10,8 @@
 #
 # The release lookup, version comparison, download and checksum check are in src/updater.js; this script only
 # locks, extracts, backs up, installs and rolls back. config.json, env and the state are never touched (the installer keeps
-# them). The GitHub token is read from the file named in auto-update.conf and never printed.
+# them). This repository is public, so no token is needed; when the file named in auto-update.conf (default: env) holds
+# one, the updater uses it (a higher rate limit). The token is read from that file by updater.js and never printed.
 #
 # --apply e-mails the recipients in admin.json (installer or admin page) when it installed a new version or failed;
 # src/notify.js does that as the service's own user (setpriv), so root never parses the file that user can write.
@@ -62,7 +63,13 @@ setting() {
 }
 TOKEN_FILE="$(setting TOKEN_FILE)"
 TOKEN_FILE="${TOKEN_FILE:-$CONF_DIR/env}"
-[[ -r "$TOKEN_FILE" ]] || fail "token file $TOKEN_FILE is missing"
+# Optional: without a readable token file the release lookup and download go to GitHub without a token.
+token_args=()
+if [[ -r "$TOKEN_FILE" ]]; then
+    token_args=(--token-file "$TOKEN_FILE")
+else
+    log "no token file $TOKEN_FILE; checking the public releases without a token"
+fi
 
 mkdir -p "$(dirname "$LOCK_FILE")"
 exec 9>"$LOCK_FILE"
@@ -82,14 +89,14 @@ trap 'rm -rf "$work"' EXIT
 
 if [[ "$mode" == "--check" ]]; then
     rc=0
-    "$NODE_BIN" "$APP_DIR/src/updater.js" --check --app-dir "$APP_DIR" --token-file "$TOKEN_FILE" || rc=$?
+    "$NODE_BIN" "$APP_DIR/src/updater.js" --check --app-dir "$APP_DIR" ${token_args[@]+"${token_args[@]}"} || rc=$?
     exit "$rc"
 fi
 
 mkdir "$work/download" "$work/extract"
 rc=0
 out="$("$NODE_BIN" "$APP_DIR/src/updater.js" --download "$work/download" --format tar.gz \
-    --app-dir "$APP_DIR" --token-file "$TOKEN_FILE")" || rc=$?
+    --app-dir "$APP_DIR" ${token_args[@]+"${token_args[@]}"})" || rc=$?
 printf '%s\n' "$out" | grep -v -e '^ARCHIVE=' -e '^VERSION=' | sed 's/^/auto-update: /' || true
 case "$rc" in
     0) exit 0 ;;

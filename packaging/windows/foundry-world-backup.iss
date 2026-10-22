@@ -66,6 +66,7 @@ Source: "{#RepoRoot}\src\*"; DestDir: "{app}\src"; Flags: ignoreversion recurses
 Source: "{#RepoRoot}\scripts\*.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "{#RepoRoot}\package.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\.env.example"; DestDir: "{app}"; Flags: ignoreversion
 ; Node.js lives outside {app}: the auto-updater replaces the whole code folder.
@@ -263,7 +264,8 @@ begin
   UpdatePage := CreateInputOptionPage(SettingsPage.ID, 'Automatic updates',
     'Keep the service itself up to date',
     'Optional. The service checks the GitHub releases of this project once a day and installs newer versions. ' +
-    'It uses the token above, so that token also needs Contents: read-only on dxcufgb/FoundryVTT-world-backup-to-git.',
+    'The project is public, so no token is needed for this (the token above, if any, is only used to raise ' +
+    'GitHub''s rate limit).',
     False, False);
   UpdatePage.Add('Turn on automatic updates');
   UpdatePage.Values[0] := (ExpandConstant('{param:AUTOUPDATE|0}') = '1') or AutoUpdateWasOn;

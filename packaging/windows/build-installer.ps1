@@ -42,7 +42,7 @@ try {
         # Stamp the version into a staged copy only (the first "version" field, the top-level one).
         $stage = Join-Path $work 'app'
         New-Item -ItemType Directory -Path $stage | Out-Null
-        foreach ($item in @('src', 'scripts', 'package.json', 'README.md', 'config.example.json', '.env.example')) {
+        foreach ($item in @('src', 'scripts', 'package.json', 'README.md', 'LICENSE', 'config.example.json', '.env.example')) {
             Copy-Item -LiteralPath (Join-Path $root $item) -Destination $stage -Recurse
         }
         $package = Join-Path $stage 'package.json'

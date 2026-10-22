@@ -53,8 +53,9 @@ async function passwordHash() {
 const git = (dir, ...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } }).trim();
 
 // A fake GitHub: `tokens` maps a token to its owner's login (unknown tokens get 401); `repos[owner/name]` =
-// { private, push } for world repositories, { tag } for the service's release repository; `expires` is the expiry
-// header GitHub would send; POST /user/repos creates a repository unless createStatus says otherwise.
+// { private, push } for world repositories, { tag, public } for the service's release repository; a request without a
+// token sees only `public: true` repositories (anything else is a 404, /user a 401); `expires` is the expiry header
+// GitHub would send; POST /user/repos creates a repository unless createStatus says otherwise.
 function fakeGithub({ tokens = { [TOKEN]: 'octo' }, expires = '2099-01-01 00:00:00 UTC', repos = {}, down = false, createStatus = 201, foundry = null } = {}) {
   const seen = [];
   const fetchImpl = async (url, init = {}) => {
@@ -67,6 +68,13 @@ function fakeGithub({ tokens = { [TOKEN]: 'octo' }, expires = '2099-01-01 00:00:
     }
     if (down) throw new TypeError('fetch failed');
     const tok = auth.replace(/^Bearer /, '');
+    if (!auth) {
+      const anon = /^https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)(\/releases\/latest)?$/.exec(url);
+      const pub = anon && repos[anon[1]] && repos[anon[1]].public === true ? repos[anon[1]] : null;
+      if (url === `${API}/user`) return json(401, { message: 'Requires authentication' });
+      if (!pub || (anon[2] && !pub.tag)) return json(404, { message: 'Not Found' });
+      return anon[2] ? json(200, { tag_name: pub.tag, assets: [] }) : json(200, { private: false, default_branch: 'main', permissions: { push: false } });
+    }
     if (!Object.hasOwn(tokens, tok)) return json(401, { message: 'Bad credentials' });
     if (url === `${API}/user`) return json(200, { login: tokens[tok] }, expires ? { 'github-authentication-token-expiration': expires } : {});
     if (url === `${API}/user/repos` && init.method === 'POST') {
@@ -814,9 +822,47 @@ test('Test setup checks the token, git, the data folder, the state folder, Found
     res = await s.call('POST', 'setup-test', { token: BAD_TOKEN });
     assert.equal(res.data.token.status, 'bad');
     assert.ok(!res.data.checks.some((c) => c.kind === 'world'));
+    assert.equal(res.data.checks.find((c) => c.kind === 'service').status, 'warn', 'checked without the refused token');
+    assert.ok(!gh.seen.some((c) => c.auth === `Bearer ${BAD_TOKEN}` && c.url.includes(SERVICE_REPO)));
     assert.ok(gh.seen.every((c) => !c.body || !c.body.includes(TOKEN)));
   } finally {
     await s.close();
+  }
+  // the release repository: public = found without the token (which is not sent for it); still private = the
+  // token's view counts; neither = a warning (updates are optional), never a failure
+  const gh4 = fakeGithub({ repos: { [SERVICE_REPO]: { tag: 'v1.4.2', public: true } } });
+  const s4 = await start({ fetchImpl: gh4.fetchImpl, worlds: {} });
+  try {
+    await s4.login();
+    const res = await s4.call('POST', 'setup-test', {});
+    const service = res.data.checks.find((c) => c.kind === 'service');
+    assert.equal(service.status, 'ok');
+    assert.match(service.message, /public and reachable without a token/);
+    const lookups = gh4.seen.filter((c) => c.url === `${API}/repos/${SERVICE_REPO}`);
+    assert.equal(lookups.length, 1);
+    assert.equal(lookups[0].auth, '', 'the public release repository is looked up without the token');
+  } finally {
+    await s4.close();
+  }
+  const gh5 = fakeGithub({ repos: { [SERVICE_REPO]: { tag: 'v1.4.2' } } });
+  const s5 = await start({ fetchImpl: gh5.fetchImpl, worlds: {} });
+  try {
+    await s5.login();
+    const service = (await s5.call('POST', 'setup-test', {})).data.checks.find((c) => c.kind === 'service');
+    assert.equal(service.status, 'ok');
+    assert.match(service.message, /the token can read the release repository/);
+  } finally {
+    await s5.close();
+  }
+  const s6 = await start({ fetchImpl: fakeGithub({ repos: {} }).fetchImpl, worlds: {} });
+  try {
+    await s6.login();
+    const res = await s6.call('POST', 'setup-test', {});
+    const service = res.data.checks.find((c) => c.kind === 'service');
+    assert.equal(service.status, 'warn');
+    assert.match(service.message, /could not be checked \(GitHub does not show it without a token\)/);
+  } finally {
+    await s6.close();
   }
   // "create repositories" off: a missing one is a problem; GitHub down: the token check says so
   const gh2 = fakeGithub({ repos: {} });
@@ -962,7 +1008,7 @@ test('"Update now" shows the versions and asks the updater to run, at most every
     await s2.login();
     const res = await s2.call('GET', 'update');
     assert.equal(res.data.latest, null);
-    assert.match(res.data.latestProblem, /cannot see dxcufgb\/FoundryVTT-world-backup-to-git/);
+    assert.match(res.data.latestProblem, /no published release of dxcufgb\/FoundryVTT-world-backup-to-git/);
     assert.equal(res.data.canUpdate, false);
     const post = await s2.call('POST', 'update', {});
     assert.equal(post.status, 409);
@@ -970,5 +1016,32 @@ test('"Update now" shows the versions and asks the updater to run, at most every
     assert.equal(requests.length, 1);
   } finally {
     await s2.close();
+  }
+  // public release repository: no token at all, or one GitHub refuses, still finds the latest release
+  for (const token of ['', BAD_TOKEN]) {
+    problem = '';
+    const gh3 = fakeGithub({ repos: { [SERVICE_REPO]: { tag: 'v1.5.0', public: true } } });
+    const s3 = await start({ fetchImpl: gh3.fetchImpl, updateTrigger, version: '1.4.2', token, envText: `GITHUB_TOKEN=${token || 'REPLACE_ME'}\n` });
+    try {
+      await s3.login();
+      const res = await s3.call('GET', 'update');
+      assert.equal(res.data.latest, '1.5.0', `token ${token ? 'refused' : 'none'}`);
+      assert.equal(res.data.newer, true);
+      assert.equal(res.data.latestProblem, '');
+      const last = gh3.seen.filter((c) => c.url.endsWith('/releases/latest')).at(-1);
+      assert.equal(last.auth, '', 'the answer came from the lookup without a token');
+      assert.ok(gh3.seen.every((c) => !c.auth || c.auth === `Bearer ${token}`));
+    } finally {
+      await s3.close();
+    }
+  }
+  // GitHub's rate limit is named as such
+  const limited = async () => new Response('{}', { status: 403, headers: { 'content-type': 'application/json', 'x-ratelimit-remaining': '0' } });
+  const s4 = await start({ fetchImpl: limited, updateTrigger, version: '1.4.2', token: '', envText: 'GITHUB_TOKEN=REPLACE_ME\n' });
+  try {
+    await s4.login();
+    assert.match((await s4.call('GET', 'update')).data.latestProblem, /rate limit is used up \(403\)/);
+  } finally {
+    await s4.close();
   }
 });

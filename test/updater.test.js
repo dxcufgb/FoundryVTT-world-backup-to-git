@@ -23,8 +23,8 @@ const REPO = 'dxcufgb/FoundryVTT-world-backup-to-git';
 const LATEST = `${API}/repos/${REPO}/releases/latest`;
 const TOKEN = 'updater-token-secret';
 
-/** Create a JSON response fixture with the requested HTTP status. */
-const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status });
+/** Create a JSON response fixture with the requested HTTP status and headers. */
+const json = (obj, status = 200, headers = {}) => new Response(JSON.stringify(obj), { status, headers });
 /** Create a redirect response fixture pointing to the supplied location. */
 const redirect = (location) => new Response(null, { status: 302, headers: { location } });
 /** Return the hexadecimal SHA-256 digest of fixture data. */
@@ -174,7 +174,53 @@ test('check: the release lookup carries the token, and errors are reported witho
   }
   const bad = createUpdater({ token: TOKEN, fetchImpl: mockFetch({ [LATEST]: () => new Response('not json') }) });
   await assert.rejects(bad.check('1.0.0'), /invalid JSON/);
-  assert.throws(() => createUpdater({ token: '' }), /no GitHub token/);
+});
+
+test('check: without a token the release lookup has no Authorization header (the repository is public)', async () => {
+  for (const token of [undefined, '']) {
+    const f = mockFetch({ [LATEST]: () => json(release('v1.1.0')) });
+    const r = await createUpdater({ token, fetchImpl: f, log: () => {} }).check('1.0.0');
+    assert.equal(r.newer, true);
+    assert.equal(f.calls.length, 1);
+    assert.ok(!('Authorization' in f.calls[0].init.headers), 'no Authorization header without a token');
+    assert.equal(f.calls[0].init.headers['User-Agent'], 'foundry-world-backup-updater');
+  }
+  const missing = createUpdater({ fetchImpl: mockFetch({ [LATEST]: () => json({}, 404) }), log: () => {} });
+  await assert.rejects(missing.check('1.0.0'), (err) => /no published release found \(HTTP 404\)/.test(err.message) && !/token/.test(err.message));
+});
+
+test('check: a token GitHub refuses (401) is dropped and the lookup is repeated without it', async () => {
+  const logs = [];
+  const f = mockFetch({ [LATEST]: (init) => (init.headers.Authorization ? json({ message: 'Bad credentials' }, 401) : json(release('v1.1.0'))) });
+  const r = await createUpdater({ token: TOKEN, fetchImpl: f, log: (l) => logs.push(l) }).check('1.0.0');
+  assert.equal(r.newer, true);
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[0].init.headers.Authorization, `Bearer ${TOKEN}`);
+  assert.ok(!('Authorization' in f.calls[1].init.headers));
+  assert.match(logs.join('\n'), /refused the token \(HTTP 401\); continuing without a token/);
+  assert.ok(!logs.join('\n').includes(TOKEN));
+});
+
+test('check: a used-up rate limit (403 / 429) gives a clear error', async () => {
+  const limited = { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1767225600' };
+  let u = createUpdater({ fetchImpl: mockFetch({ [LATEST]: () => json({ message: 'API rate limit exceeded' }, 403, limited) }), log: () => {} });
+  await assert.rejects(u.check('1.0.0'), (err) =>
+    /rate limit for requests without a token \(60 an hour per IP address\) is used up \(HTTP 403\)/.test(err.message) &&
+    /resets at 2026-01-01T00:00:00\.000Z/.test(err.message) && /UPDATER_GITHUB_TOKEN/.test(err.message));
+  u = createUpdater({ fetchImpl: mockFetch({ [LATEST]: () => json({ message: 'slow down' }, 429) }), log: () => {} });
+  await assert.rejects(u.check('1.0.0'), /rate limit .*is used up \(HTTP 429\); try again later/);
+  u = createUpdater({ token: TOKEN, fetchImpl: mockFetch({ [LATEST]: () => json({}, 403, limited) }), log: () => {} });
+  await assert.rejects(u.check('1.0.0'), (err) => /GitHub's rate limit is used up \(HTTP 403\)/.test(err.message) && !err.message.includes(TOKEN));
+  // a 403 that is not the rate limit stays a plain HTTP error
+  u = createUpdater({ fetchImpl: mockFetch({ [LATEST]: () => json({}, 403) }), log: () => {} });
+  await assert.rejects(u.check('1.0.0'), (err) => err.message === 'release lookup failed (HTTP 403)');
+  // the asset download reports it the same way
+  const { rel, routes } = releaseRoutes('v1.1.0', Buffer.from('x'));
+  routes[rel.assets[2].url] = () => json({}, 429);
+  const dir = tmpdir();
+  u = createUpdater({ fetchImpl: mockFetch(routes), log: () => {} });
+  await assert.rejects(u.download(rel, 'tar.gz', dir), /download of SHA256SUMS\.txt: GitHub's rate limit .*\(HTTP 429\)/);
+  fs.rmSync(dir, { recursive: true });
 });
 
 test('download: redirect is followed without the token and the checksum is verified', async () => {
@@ -196,6 +242,23 @@ test('download: redirect is followed without the token and the checksum is verif
   assert.equal(assetCall.init.headers.Accept, 'application/octet-stream');
   assert.equal(assetCall.init.redirect, 'manual');
   fs.rmSync(dir, { recursive: true });
+});
+
+test('download without a token: no Authorization header anywhere, the checksum is still verified', async () => {
+  const archive = Buffer.from('public archive contents');
+  const { rel, routes } = releaseRoutes('v1.1.0', archive);
+  const f = mockFetch(routes);
+  const dir = tmpdir();
+  const file = await createUpdater({ fetchImpl: f, log: () => {} }).download(rel, 'tar.gz', dir);
+  assert.deepEqual(fs.readFileSync(file), archive);
+  assert.ok(f.calls.length >= 4);
+  for (const call of f.calls) assert.equal(call.init.headers?.Authorization, undefined, `no Authorization header to ${call.url}`);
+  const { rel: rel2, routes: routes2 } = releaseRoutes('v1.1.0', Buffer.from('tampered'), { sumsFor: Buffer.from('original') });
+  const dir2 = tmpdir();
+  await assert.rejects(createUpdater({ fetchImpl: mockFetch(routes2), log: () => {} }).download(rel2, 'tar.gz', dir2), /checksum mismatch/);
+  assert.deepEqual(fs.readdirSync(dir2), []);
+  fs.rmSync(dir, { recursive: true });
+  fs.rmSync(dir2, { recursive: true });
 });
 
 test('download: a checksum mismatch is refused and nothing is written', async () => {
@@ -321,16 +384,37 @@ test('cli: errors exit 1 with a message that never contains the token', async ()
     const args = ['--check', '--app-dir', dir, '--token-file', path.join(dir, 'token')];
     assert.equal(await main(args, { env: {}, fetchImpl: f, log: () => {} }), EXIT_ERROR);
     assert.equal(await main(['--bogus'], { env: {}, fetchImpl: f, log: () => {} }), EXIT_ERROR);
-    const missing = ['--check', '--app-dir', dir, '--token-file', path.join(dir, 'nope')];
-    assert.equal(await main(missing, { env: {}, fetchImpl: f, log: () => {} }), EXIT_ERROR);
-    const noToken = ['--check', '--app-dir', dir];
-    assert.equal(await main(noToken, { env: {}, fetchImpl: f, log: () => {} }), EXIT_ERROR);
+    // a token file that exists but cannot be read (here: a folder) is an error
+    const unreadable = ['--check', '--app-dir', dir, '--token-file', dir];
+    assert.equal(await main(unreadable, { env: {}, fetchImpl: f, log: () => {} }), EXIT_ERROR);
   } finally {
     console.error = orig;
   }
-  assert.equal(errors.length, 4);
+  assert.equal(errors.length, 3);
   assert.match(errors[0], /HTTP 401/);
-  assert.match(errors[3], /no GitHub token/);
+  assert.match(errors[2], /cannot read token file/);
   assert.ok(errors.every((e) => !e.includes(TOKEN)));
   fs.rmSync(dir, { recursive: true });
+});
+
+test('cli: without a token (none given, a missing token file or a placeholder) it checks and downloads anonymously', async () => {
+  const dir = fakeInstall('1.0.0');
+  fs.writeFileSync(path.join(dir, 'env'), 'GITHUB_TOKEN=REPLACE_ME\nPORT=8787\n');
+  const out = [];
+  const log = (l) => out.push(l);
+  for (const extra of [[], ['--token-file', path.join(dir, 'nope')], ['--token-file', path.join(dir, 'env')]]) {
+    const f = mockFetch({ [LATEST]: () => json(release('v1.0.1')) });
+    assert.equal(await main(['--check', '--app-dir', dir, ...extra], { env: {}, fetchImpl: f, log }), EXIT_UPDATE);
+    assert.ok(!('Authorization' in f.calls[0].init.headers), `no Authorization header (${extra.join(' ') || 'no token file'})`);
+  }
+  assert.match(out.join('\n'), /no token file .*nope; asking GitHub without a token/);
+  const outDir = tmpdir();
+  const archive = Buffer.from('anonymous download');
+  const { routes } = releaseRoutes('v1.1.0', archive);
+  const f = mockFetch(routes);
+  assert.equal(await main(['--download', outDir, '--app-dir', dir, '--format', 'tar.gz'], { env: {}, fetchImpl: f, log }), EXIT_UPDATE);
+  assert.deepEqual(fs.readFileSync(path.join(outDir, 'foundry-world-backup-1.1.0-linux.tar.gz')), archive);
+  assert.ok(f.calls.every((c) => c.init.headers?.Authorization === undefined));
+  fs.rmSync(dir, { recursive: true });
+  fs.rmSync(outDir, { recursive: true });
 });

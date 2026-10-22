@@ -191,6 +191,27 @@ function createApp({
     return { ...base, status: 'warn', message: 'does not exist yet: it is created (private) on the first backup' };
   }
 
+  // The service's own release repository (automatic updates). It is public, so it is looked up without a token first;
+  // only when that fails (not public, GitHub's rate limit) is the token tried. Never 'bad': updates are optional.
+  async function checkServiceRepo(tok) {
+    const base = { kind: 'service', name: 'Automatic updates', repo: SERVICE_REPO };
+    let problem = '';
+    try {
+      if ((await github.repoInfo(SERVICE_REPO, '')).exists) return { ...base, status: 'ok', message: 'the release repository is public and reachable without a token' };
+      problem = 'GitHub does not show it without a token';
+    } catch (err) {
+      problem = err.message;
+    }
+    if (tok) {
+      try {
+        if ((await github.repoInfo(SERVICE_REPO, tok)).exists) return { ...base, status: 'ok', message: 'the token can read the release repository' };
+      } catch {
+        // reported below with the anonymous lookup's reason
+      }
+    }
+    return { ...base, status: 'warn', message: `the release repository could not be checked (${problem}); automatic updates may fail` };
+  }
+
   // "Test setup": the token, git, the data folder, Foundry, the service's own repository and every world's repository.
   async function testSetup(tok = currentToken) {
     const tokenResult = await github.checkToken(tok);
@@ -216,15 +237,14 @@ function createApp({
       const { status, message } = await checkFoundry();
       checks.push({ kind: 'foundry', name: 'Foundry', status, message });
     }
-    if (tokenResult.status === 'bad') return { token: tokenResult, checks };
+    // the release repository needs no token, so it is checked even when GitHub refuses the token
+    if (tokenResult.status === 'bad') {
+      checks.push(await checkServiceRepo(''));
+      return { token: tokenResult, checks };
+    }
     const tokenOwner = tokenResult.login || null;
     if (tok === currentToken && tokenOwner) owner = tokenOwner;
-    const service = github.repoInfo(SERVICE_REPO, tok).then(
-      (r) => ({ kind: 'service', name: 'Automatic updates', repo: SERVICE_REPO,
-        ...(r.exists ? { status: 'ok', message: 'the token can read the release repository' }
-          : { status: 'warn', message: 'the token cannot see the release repository; automatic updates need it unless they have their own updater token' }) }),
-      (err) => ({ kind: 'service', name: 'Automatic updates', repo: SERVICE_REPO, status: 'warn', message: err.message }),
-    );
+    const service = checkServiceRepo(tok);
     const repos = worlds.filter((w) => effectiveSettings(currentConfig, w.id).enabled).map((w) => checkWorldRepo(w, tok, tokenOwner));
     checks.push(...(await Promise.all([service, ...repos])));
     return { token: tokenResult, checks };
@@ -271,19 +291,28 @@ function createApp({
     };
   }
 
-  // "Update now": the installed version, the latest release the token can see, and the trigger.
+  // "Update now": the installed version, the latest release (the repository is public: the token is only used when there
+  // is one, and a lookup it fails is repeated without it), and the trigger.
   const serviceUpdate = {
     version,
     async info() {
       const out = { installed: version, latest: null, newer: null, latestProblem: '', canUpdate: false, problem: '' };
       try {
-        const res = await fetchImpl(`https://api.github.com/repos/${SERVICE_REPO}/releases/latest`, {
+        const lookup = (tok) => fetchImpl(`https://api.github.com/repos/${SERVICE_REPO}/releases/latest`, {
           signal: AbortSignal.timeout(20000),
-          headers: { Authorization: `Bearer ${currentToken}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'foundry-world-backup' },
+          headers: { ...(tok ? { Authorization: `Bearer ${tok}` } : {}), Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'foundry-world-backup' },
         });
+        let res = await lookup(currentToken);
+        if (currentToken && (res.status === 401 || res.status === 403 || res.status === 404)) {
+          await res.body?.cancel?.();
+          res = await lookup('');
+        }
         if (res.status === 404) {
           await res.body?.cancel?.();
-          out.latestProblem = `the token cannot see ${SERVICE_REPO} (the updater may have a token of its own)`;
+          out.latestProblem = `GitHub shows no published release of ${SERVICE_REPO}`;
+        } else if (res.status === 429 || (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0')) {
+          await res.body?.cancel?.();
+          out.latestProblem = `GitHub's rate limit is used up (${res.status}); try again later`;
         } else if (!res.ok) {
           await res.body?.cancel?.();
           out.latestProblem = `GitHub request failed (${res.status})`;

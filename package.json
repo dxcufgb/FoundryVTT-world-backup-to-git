@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Scheduled backups of Foundry VTT worlds to private GitHub repositories, with an administration page",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "main": "src/server.js",
   "engines": { "node": ">=18" },
   "scripts": {

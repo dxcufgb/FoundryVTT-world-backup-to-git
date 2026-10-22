@@ -85,9 +85,8 @@ as narrow as possible:
    repositories** when the service may create the repositories (creation needs that), or **Only select
    repositories** with the world repositories you created yourself (`foundry-world-<world id>`, private).
 3. **Permissions → Repository permissions**: **Contents: Read and write** (push the backups) and, for creating
-   repositories, **Administration: Read and write**. Nothing else. For [automatic updates](#automatic-updates) of
-   the service itself the token also needs **Contents: Read-only** on `dxcufgb/FoundryVTT-world-backup-to-git`, or
-   the updater gets a token of its own.
+   repositories, **Administration: Read and write**. Nothing else. [Automatic updates](#automatic-updates) of the
+   service itself need no extra permission: this repository is public.
 4. Set an expiry you will remember; the admin page's **Test setup** and the daily check warn two weeks before.
 
 GitHub rejects files over 100 MB in a push and recommends repositories under a few GB. A world with huge uploaded
@@ -104,8 +103,7 @@ otherwise the installer downloads the official Node.js 22.
 curl -fsSL https://raw.githubusercontent.com/dxcufgb/install/main/install.sh | sudo bash -s foundry-world-backup
 ```
 
-(the repository is private: the one-liner asks for a fine-grained token with read-only *Contents* access to it), or
-download `foundry-world-backup-linux.tar.gz` from the latest release, `tar xzf` it, `cd foundry-world-backup-X.Y.Z`
+or download `foundry-world-backup-linux.tar.gz` from the latest release, `tar xzf` it, `cd foundry-world-backup-X.Y.Z`
 and `sudo ./install.sh`. The installer asks for:
 
 - the **Foundry user data folder** (it guesses `/home/*/foundrydata` and the like),
@@ -134,7 +132,8 @@ instead of `foundry-backup`, so no ACL is needed), `--admin-port PORT`, `--grant
 `--disable-auto-update`, `--check-update`, `--update-now`, `--uninstall [--purge]` (`--purge` also deletes the
 settings, the local git copies and the service user; the repositories on GitHub stay), `--install-node` /
 `--no-install-node`. Environment: `FOUNDRY_BACKUP_DATA`, `FOUNDRY_BACKUP_ADMIN_PORT`, `FOUNDRY_BACKUP_ADMIN_PUBLIC_URL`,
-`FOUNDRY_BACKUP_FOUNDRY_URL`, `FOUNDRY_BACKUP_NOTIFY_EMAILS`, `FOUNDRY_BACKUP_SMTP_*`, `UPDATER_GITHUB_TOKEN`.
+`FOUNDRY_BACKUP_FOUNDRY_URL`, `FOUNDRY_BACKUP_NOTIFY_EMAILS`, `FOUNDRY_BACKUP_SMTP_*`, `UPDATER_GITHUB_TOKEN` (optional,
+see [Automatic updates](#automatic-updates)).
 
 ### Check that it runs
 
@@ -214,8 +213,9 @@ and
   one; a new token is checked with GitHub before it replaces the old one in `env`; without a token the field is on
   the page),
   **Test setup** (the token, `git`, the data folder, the state folder, Foundry's `/api/status`, the release
-  repository for automatic updates and every enabled world's repository: exists / will be created / cannot be
-  pushed to / is public), the repository name prefix and whether missing repositories are created.
+  repository for automatic updates (public, so it is looked up without the token; if GitHub cannot be asked, that is
+  a warning, not a failure) and every enabled world's repository: exists / will be created / cannot be pushed to /
+  is public), the repository name prefix and whether missing repositories are created.
 - **Notifications**: the recipients and the SMTP server (see below), with a test e-mail.
 - **Admin password**.
 
@@ -320,9 +320,15 @@ Off unless asked for (`--auto-update` / the wizard's checkbox / `--enable-auto-u
 SYSTEM (Windows) run checks the latest release of this repository and installs it when it is strictly newer and not a
 pre-release: the archive is verified against the release's `SHA256SUMS.txt`, the previous code is kept in
 `/opt/foundry-world-backup.prev` (`C:\Program Files\FoundryWorldBackup.prev`) and put back when the install fails or
-the service does not come back. Settings, `env` and the state are never touched. The updater uses the service's
-token (which then needs Contents: read-only on this repository) or a separate token (`UPDATER_GITHUB_TOKEN`; the
-one-line installer offers the token it downloaded the release with), stored root-only. Results are e-mailed.
+the service does not come back. Settings, `env` and the state are never touched. Results are e-mailed.
+
+This repository is public, so the updater needs **no token**. Without one GitHub allows 60 API requests an hour per IP
+address, far more than a daily check uses; when that limit is used up (HTTP 403/429) the run fails with a message that
+says so and the next run tries again. A token, when there is one, raises that limit: the updater uses
+`UPDATER_GITHUB_TOKEN` given to the installer (stored root-only in `updater-token`), or the token the one-line installer
+was given (offered first when interactive), or else the service's own `GITHUB_TOKEN` if it is set (any valid token can
+read a public repository; one GitHub refuses is dropped and the check goes on without it). The token only goes to
+`api.github.com`, never to a log or a command line, and the installers never stop to ask for one.
 
 ### Update now
 
@@ -361,6 +367,10 @@ GitHub API/UI): no deletion or force push, changes through pull requests merged 
 CI and security jobs as required status checks. Release tags `v*` are protected by **Protect release tags**
 (`.github/ruleset-protect-release-tags.json`): no deletion, update or force push. Keep the check names in the ruleset
 in step with the job names in `ci.yml` and `security.yml`.
+
+## License
+
+[MIT](LICENSE) © 2026 Dxcufgb.
 
 ## Troubleshooting
 

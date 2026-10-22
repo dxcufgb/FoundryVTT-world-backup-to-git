@@ -38,7 +38,6 @@ cat <<EOF
 | Linux / Raspberry Pi (x64, arm64, armv7) | Archive with \`install.sh\` (git must be installed) | [$NAME-linux.tar.gz]($DL/$NAME-linux.tar.gz) | [foundry-world-backup-linux.tar.gz]($LATEST/foundry-world-backup-linux.tar.gz) |
 
 Checksums of all files: [SHA256SUMS.txt]($DL/SHA256SUMS.txt).
-The repository is private, so the links only work when you are signed in to GitHub with access to it.
 
 ### Linux / Raspberry Pi
 
@@ -46,10 +45,10 @@ The repository is private, so the links only work when you are signed in to GitH
 curl -fsSL https://raw.githubusercontent.com/dxcufgb/install/main/install.sh | sudo bash -s foundry-world-backup
 \`\`\`
 
-It asks for a fine-grained token with read-only *Contents* access to this repository. Or by hand:
+Or by hand:
 
 \`\`\`sh
-gh release download $TAG --repo $REPO --pattern '$NAME-linux.tar.gz' --pattern SHA256SUMS.txt
+curl -fL -O $DL/$NAME-linux.tar.gz -O $DL/SHA256SUMS.txt
 sha256sum --check --ignore-missing SHA256SUMS.txt
 tar xzf $NAME-linux.tar.gz
 cd $NAME

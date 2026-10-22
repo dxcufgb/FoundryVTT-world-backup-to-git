@@ -43,6 +43,8 @@ never from the command line. The same goes for the admin page password (FOUNDRY_
 first install) and the notification settings (FOUNDRY_BACKUP_NOTIFY_EMAILS, FOUNDRY_BACKUP_SMTP_HOST, _PORT, _SECURITY,
 _USER, _PASSWORD, _FROM). FOUNDRY_BACKUP_ADMIN_PORT, FOUNDRY_BACKUP_ADMIN_PUBLIC_URL and FOUNDRY_BACKUP_FOUNDRY_URL set
 the admin port, its public address and where Foundry answers (default http://localhost:30000).
+Automatic updates need no token (the repository is public); UPDATER_GITHUB_TOKEN, or else the service's GITHUB_TOKEN,
+is only used to raise GitHub's rate limit.
 #>
 [CmdletBinding()]
 param(
@@ -423,7 +425,9 @@ function Write-AutoUpdateConf([string]$Enabled, [string]$TokenFile, [string]$Nod
     Protect-AdminFile $AutoConf
 }
 
-# The updater's token: UPDATER_GITHUB_TOKEN, a prompt, or the service's own GITHUB_TOKEN from env.
+# Where the updater may take a token from. None is needed (the repository is public); a token only raises GitHub's
+# rate limit: UPDATER_GITHUB_TOKEN, the token file already configured, else env, whose GITHUB_TOKEN is used when it is
+# set (no token otherwise). Never asks for a token.
 function Get-UpdaterTokenFile {
     $current = Get-Setting 'TOKEN_FILE'
     $token = ''
@@ -432,14 +436,6 @@ function Get-UpdaterTokenFile {
     }
     elseif ($current -and (Test-Path -LiteralPath $current)) {
         return $current
-    }
-    elseif (Test-Interactive) {
-        Write-BackupLog "The updater needs a GitHub token that can read releases of $UpdateRepo."
-        Write-BackupLog "The service's own GITHUB_TOKEN works if you also give it Contents: read-only on that repository."
-        $answer = Read-Host -Prompt "Use the service's GITHUB_TOKEN from $EnvFile? [Y/n]"
-        if ($answer -match '^[Nn]') {
-            $token = Read-Secret "Updater token (fine-grained, Contents: read-only on $UpdateRepo)"
-        }
     }
     if ($token) {
         if (-not (Test-Path -LiteralPath $UpdaterTokenFile)) { Write-TextFile $UpdaterTokenFile '' }
@@ -466,14 +462,14 @@ function Enable-AutoUpdate([string]$Node) {
     $tokenFile = Get-UpdaterTokenFile
     Write-AutoUpdateConf -Enabled 'yes' -TokenFile $tokenFile -Node $Node
     Register-UpdaterTask
-    Write-BackupLog "Automatic updates on: daily check (random time) of $UpdateRepo, token from $tokenFile."
+    Write-BackupLog "Automatic updates on: daily check (random time) of $UpdateRepo (public; a token in $tokenFile is used if set)."
     if (-not $IsUpgrade) {
         $rc = Invoke-Updater '-Check'
         if ($rc -eq 75) {
             Write-BackupLog 'Another update run is in progress; check later with: .\scripts\install-service.ps1 -Check'
         }
         elseif ($rc -ne 0 -and $rc -ne 10) {
-            Write-Warning "The update check failed; make sure the token in $tokenFile can read $UpdateRepo. Try: .\scripts\install-service.ps1 -Check"
+            Write-Warning "The update check failed (no network, or GitHub's rate limit); automatic updates stay on. Try: .\scripts\install-service.ps1 -Check"
         }
     }
 }
@@ -595,7 +591,7 @@ $appFull = [IO.Path]::GetFullPath($AppDir).TrimEnd('\')
 if ([IO.Path]::GetFullPath($SrcDir).TrimEnd('\') -ne $appFull) {
     if (Test-Path -LiteralPath $AppDir) { Remove-Item -LiteralPath $AppDir -Recurse -Force }
     New-Item -ItemType Directory -Path $AppDir | Out-Null
-    foreach ($item in @('src', 'scripts', 'package.json', 'README.md', 'config.example.json', '.env.example')) {
+    foreach ($item in @('src', 'scripts', 'package.json', 'README.md', 'LICENSE', 'config.example.json', '.env.example')) {
         $path = Join-Path $SrcDir $item
         if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination $AppDir -Recurse -Force }
     }
