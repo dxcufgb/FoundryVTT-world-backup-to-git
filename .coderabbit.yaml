@@ -1,0 +1,31 @@
+# CodeRabbit settings for FoundryVTT-world-backup-to-git.
+# Shared rules come from the central dxcufgb/coderabbit repository (inheritance: true), and CodeRabbit reads
+# CLAUDE.md (and its Review focus) as code guidelines. Only what is specific to this repository is here.
+# Check the merged result on a pull request with: @coderabbitai configuration
+inheritance: true
+
+reviews:
+  path_instructions:
+    - path: "src/backup.js"
+      instructions: |
+        The token reaches git only through the credential helper in that process's environment
+        (FWB_GITHUB_TOKEN): never on a command line, in a remote URL, a commit, status.json, an e-mail or a log
+        (scrub()). The git directory lives in the state folder (GIT_DIR/GIT_WORK_TREE); nothing may write into
+        the world folder. One backup at a time; a world is never queued twice.
+    - path: "src/github.js"
+      instructions: |
+        createRepo always passes private: true; backup repositories stay private. World ids must match
+        WORLD_ID_RE and repository names REPO_RE before reaching git, a URL or a path.
+    - path: "src/scheduler.js"
+      instructions: |
+        Slots are in local time (watch DST); a slot that ran (lastScheduled) is never queued again; a missed slot
+        runs once when the machine is back.
+    - path: "src/admin*.js"
+      instructions: |
+        Session cookie on every call but login, X-CSRF-Token and JSON content type on changes, Host/Origin
+        allowlist (403 otherwise), login lockout, X-Forwarded-* only from ADMIN_TRUST_PROXY peers, strict CSP,
+        Cache-Control: no-store. TOKEN_RE must hold before a token is written to env; the token API never
+        answers 401.
+    - path: "src/admin-ui/**"
+      instructions: |
+        Strict CSP: no inline script or style, and the UI only sets text with textContent. Flag innerHTML.
