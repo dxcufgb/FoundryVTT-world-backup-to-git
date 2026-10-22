@@ -29,16 +29,17 @@
 #   /etc/foundry-world-backup/update-request     "Update now" on the admin page: the service user rewrites it, a systemd
 #                                                path unit then starts the root update (root never reads it)
 #   /etc/foundry-world-backup/admin-tls.crt/.key self-signed certificate of the admin page (root:service user, 644/640)
-#   /etc/foundry-world-backup/auto-update.conf   auto-update on/off and which token it uses (root, 600)
-#   /etc/foundry-world-backup/updater-token      only if the updater has its own token (root, 600)
+#   /etc/foundry-world-backup/auto-update.conf   auto-update on/off and which file it may take a token from (root, 600)
+#   /etc/foundry-world-backup/updater-token      only if the updater has its own (optional) token (root, 600)
 #   /var/lib/foundry-world-backup/               the service's state: one git directory per world (repos/) and
 #                                                status.json (700, owned by the service user)
 #
 # The service reads the worlds with the dedicated system user foundry-backup, which gets read access to the Foundry
 # data folder through an ACL (setfacl); --run-as makes it run as another user (the Foundry user, say) instead.
-# Automatic updates are off unless asked for. The tokens are taken from a prompt or from the environment
-# (FOUNDRY_BACKUP_GITHUB_TOKEN for the service, UPDATER_GITHUB_TOKEN for the updater, INSTALL_GITHUB_TOKEN from the
-# one-line installer as a candidate updater token), never from the command line. The same goes for the admin page
+# Automatic updates are off unless asked for; this repository is public, so they need no token (an optional one raises
+# GitHub's rate limit). The tokens are taken from a prompt or from the environment (FOUNDRY_BACKUP_GITHUB_TOKEN for the
+# service, UPDATER_GITHUB_TOKEN for the updater, INSTALL_GITHUB_TOKEN from the one-line installer as a candidate
+# updater token), never from the command line. The same goes for the admin page
 # password (FOUNDRY_BACKUP_ADMIN_PASSWORD) and the SMTP password (FOUNDRY_BACKUP_SMTP_PASSWORD).
 #
 # Logs:    journalctl -u foundry-world-backup -f      (updates: journalctl -u foundry-world-backup-update)
@@ -107,9 +108,11 @@ Environment (tokens are never taken as arguments and never logged):
   FOUNDRY_BACKUP_SMTP_HOST, FOUNDRY_BACKUP_SMTP_PORT, FOUNDRY_BACKUP_SMTP_SECURITY (starttls|tls|none),
   FOUNDRY_BACKUP_SMTP_USER, FOUNDRY_BACKUP_SMTP_PASSWORD, FOUNDRY_BACKUP_SMTP_FROM
                                 the mail server for those e-mails
-  UPDATER_GITHUB_TOKEN          a separate token for the updater (Contents: read-only on this repository)
-  INSTALL_GITHUB_TOKEN          set by the one-line installer; stored as the updater token when automatic updates
-                                are turned on (asked first when interactive)
+  UPDATER_GITHUB_TOKEN          optional token for the updater (not needed: this repository is public; a token only
+                                raises GitHub's rate limit). Without one the updater uses the service's GITHUB_TOKEN
+                                when it is set, or none
+  INSTALL_GITHUB_TOKEN          set by the one-line installer when it was given a token; stored as the updater token
+                                when automatic updates are turned on (asked first when interactive)
   NODE_BIN                      the node binary to use
 USAGE
 }
@@ -275,24 +278,11 @@ if [[ "$action" == update ]]; then
     exit 0
 fi
 
-# Asks for the updater's token on the terminal and prints it, or prints nothing for "use the service's GITHUB_TOKEN".
-# An EOF or read error never yields a token: it means "use the service's GITHUB_TOKEN".
-ask_updater_token() {
-    local answer="" token=""
-    echo "The updater needs a GitHub token that can read releases of $UPDATE_REPO." >&2
-    echo "The service's own GITHUB_TOKEN works if you also give it Contents: read-only on that repository." >&2
-    read -rp "Use the service's GITHUB_TOKEN from $CONF_DIR/env? [Y/n] " answer || return 0
-    if [[ "$answer" =~ ^[Nn] ]]; then
-        if read -rsp "Updater token (fine-grained, Contents: read-only on $UPDATE_REPO): " token; then
-            printf '%s' "$token"
-        fi
-        echo >&2
-    fi
-}
-
-# Chooses the updater's token: UPDATER_GITHUB_TOKEN, the token already configured, INSTALL_GITHUB_TOKEN (the one the
-# one-line installer downloaded this release with; asked first when interactive, and only an explicit answer other
-# than "n" stores it: an EOF stores nothing and asks nothing more), a prompt, or the service's own GITHUB_TOKEN from env.
+# Chooses where the updater may take a token from. None is needed ($UPDATE_REPO is public); a token only raises
+# GitHub's rate limit. In order: UPDATER_GITHUB_TOKEN, the token file already configured, INSTALL_GITHUB_TOKEN (the one
+# the one-line installer was given; asked first when interactive, and only an explicit answer other than "n" stores
+# it: an EOF stores nothing), else the service's env, whose GITHUB_TOKEN is used when it is set (no token otherwise).
+# Never asks for a token itself.
 choose_updater_token() {
     local current token="" answer=""
     current="$(setting TOKEN_FILE)"
@@ -304,15 +294,12 @@ choose_updater_token() {
     elif [[ -n "${INSTALL_GITHUB_TOKEN:-}" ]] && ! interactive; then
         token="$INSTALL_GITHUB_TOKEN"
     elif [[ -n "${INSTALL_GITHUB_TOKEN:-}" ]]; then
+        echo "Automatic updates need no token ($UPDATE_REPO is public); a token raises GitHub's rate limit." >&2
         if read -rp "Use the GitHub token this release was downloaded with for automatic updates? [Y/n] " answer; then
-            if [[ "$answer" =~ ^[Nn] ]]; then
-                token="$(ask_updater_token)"
-            else
+            if [[ ! "$answer" =~ ^[Nn] ]]; then
                 token="$INSTALL_GITHUB_TOKEN"
             fi
         fi
-    elif interactive; then
-        token="$(ask_updater_token)"
     fi
     if [[ -n "$token" ]]; then
         (umask 077 && printf '%s\n' "$token" > "$UPDATER_TOKEN_FILE")
@@ -421,14 +408,14 @@ enable_auto_update() {
     token_file="$(choose_updater_token)"
     write_auto_conf yes "$token_file"
     install_updater_units
-    echo "Automatic updates on: daily check (randomized time) of $UPDATE_REPO, token from $token_file."
+    echo "Automatic updates on: daily check (randomized time) of $UPDATE_REPO (public; a token in $token_file is used if set)."
     if [[ "$upgrade" == no ]]; then
         local rc=0
         run_updater --check >/dev/null 2>&1 || rc=$?
         if [[ $rc -eq 75 ]]; then
             echo "Another update run is in progress; check later with: sudo $APP_DIR/scripts/install-service.sh --check-update" >&2
         elif [[ $rc -ne 0 && $rc -ne 10 ]]; then
-            echo "Warning: the update check failed; make sure the token in $token_file can read $UPDATE_REPO." >&2
+            echo "Warning: the update check failed (no network, or GitHub's rate limit); automatic updates stay on." >&2
             echo "Try it with: sudo $APP_DIR/scripts/install-service.sh --check-update" >&2
         fi
     fi
@@ -765,7 +752,7 @@ if [[ "$SRC_DIR" != "$(readlink -f "$APP_DIR" 2>/dev/null || echo "$APP_DIR")" ]
     rm -rf "$APP_DIR"
     mkdir -p "$APP_DIR"
     cp -r "$SRC_DIR/src" "$SRC_DIR/scripts" "$SRC_DIR/package.json" "$APP_DIR/"
-    for f in README.md config.example.json .env.example; do
+    for f in README.md LICENSE config.example.json .env.example; do
         if [[ -f "$SRC_DIR/$f" ]]; then cp "$SRC_DIR/$f" "$APP_DIR/"; fi
     done
     chown -R root:root "$APP_DIR"

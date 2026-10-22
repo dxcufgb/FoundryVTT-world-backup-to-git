@@ -1,7 +1,8 @@
 'use strict';
 // The GitHub side: what the token is good for, whether a world's repository exists and creating one when it does
 // not. The token only ever goes to api.github.com (git pushes get it through a credential helper, see backup.js)
-// and is never part of a result or a log line. No dependencies: global fetch only.
+// and is never part of a result or a log line. A lookup without a token (token '') is anonymous: used for the
+// service's own public release repository. No dependencies: global fetch only.
 
 const GITHUB_API = 'https://api.github.com';
 const TIMEOUT_MS = 20000;
@@ -18,7 +19,7 @@ class GithubError extends Error {
 
 function createGithub({ fetchImpl = fetch, userAgent = 'foundry-world-backup' } = {}) {
   const apiHeaders = (token, accept = 'application/vnd.github+json') => ({
-    Authorization: `Bearer ${token}`,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     Accept: accept,
     'X-GitHub-Api-Version': '2022-11-28',
     'User-Agent': userAgent,
@@ -77,7 +78,8 @@ function createGithub({ fetchImpl = fetch, userAgent = 'foundry-world-backup' } 
 
   /**
    * GET /repos/<repo>: { exists, private, canPush, defaultBranch } or { exists: false }. A 404 means the repository
-   * does not exist or the token cannot see it (GitHub hides private repositories with 404).
+   * does not exist or the token cannot see it (GitHub hides private repositories with 404). Without a token ('')
+   * only public repositories are found.
    */
   async function repoInfo(repo, token) {
     const res = await api(`/repos/${repo}`, token);

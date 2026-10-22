@@ -103,7 +103,7 @@ try {
     if ((Get-Content -LiteralPath "$data\config.json" -Raw) -notmatch '"smoke-world"') { throw 'the admin page did not write config.json' }
     Write-Output 'admin page saves settings'
 
-    # "Update now": the service (LOCAL SERVICE) may start the SYSTEM task (the update fails: the token is fake).
+    # "Update now": the service (LOCAL SERVICE) may start the SYSTEM task (CI builds 999.0.0: nothing newer to install).
     $before = (Get-ScheduledTaskInfo -TaskName 'FoundryWorldBackup-UpdateNow').LastRunTime
     $post = Invoke-Admin 'POST' '/_admin/api/update' '{}' $login.cookie $state.csrf
     if ($post.status -ne 202) { throw "update request answered $($post.status): $($post.body)" }

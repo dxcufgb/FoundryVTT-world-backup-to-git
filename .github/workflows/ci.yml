@@ -123,6 +123,13 @@ jobs:
           echo actors | sudo -u foundry tee /home/foundry/foundrydata/Data/worlds/ci-world/packs/actors.ldb >/dev/null
           sudo chmod 700 /home/foundry /home/foundry/foundrydata
 
+      # The repository is public, so the "Update now" run below reaches the real releases even with the fake token
+      # (a refused token is dropped). A version above every release makes that run find nothing to install.
+      - name: Stamp a version above every release
+        run: |
+          sed -i '0,/"version": *"[^"]*"/s//"version": "999.0.0"/' package.json
+          grep -q '"version": "999.0.0"' package.json
+
       - name: Install with the system Node.js
         run: sudo --preserve-env=FOUNDRY_BACKUP_GITHUB_TOKEN,FOUNDRY_BACKUP_ADMIN_PASSWORD,FOUNDRY_BACKUP_FOUNDRY_URL ./install.sh --yes --foundry-data /home/foundry/foundrydata
 
@@ -191,8 +198,8 @@ jobs:
           sudo test ! -e /home/foundry/foundrydata/Data/worlds/ci-world/.git
           if sudo grep -q "$FOUNDRY_BACKUP_GITHUB_TOKEN" /var/lib/foundry-world-backup/status.json; then echo "token in status.json"; exit 1; fi
           if sudo journalctl -u foundry-world-backup --no-pager | grep -q "$FOUNDRY_BACKUP_GITHUB_TOKEN"; then echo "token in the log"; exit 1; fi
-          # "Update now": the request file starts the root update service through the path unit (the update
-          # itself fails here: the token is fake)
+          # "Update now": the request file starts the root update service through the path unit (it finds no newer
+          # release: the installed version is 999.0.0)
           systemctl is-active foundry-world-backup-update-now.path
           test "$(sudo stat -c '%a %U' /etc/foundry-world-backup/update-request)" = "600 foundry-backup"
           curl -skf -b "$RUNNER_TEMP/jar" "$api/update" | jq -e '.canUpdate and .installed != null'
@@ -286,7 +293,8 @@ jobs:
       - name: Build the installer
         shell: powershell
         run: |
-          try { .\packaging\windows\build-installer.ps1 -OutDir dist }
+          # a version above every release: the smoke test's "Update now" run must find nothing to install
+          try { .\packaging\windows\build-installer.ps1 -OutDir dist -Version 999.0.0 }
           catch { Write-Output "::error title=Build the installer::$($_.Exception.Message -replace '[\r\n%]', ' ')"; throw }
 
       - name: Install, check and uninstall it

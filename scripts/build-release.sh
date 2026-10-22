@@ -17,7 +17,7 @@
 #   SHA256SUMS.txt                                 sha256sum of every other file above
 #
 # Both archives hold one folder, foundry-world-backup-<version>/, with install.sh, src/, scripts/, package.json, the
-# README and the example config files. The same commit and version always give byte-identical archives.
+# README, the LICENSE and the example config files. The same commit and version always give byte-identical archives.
 # Needs tar, gzip, zip and sha256sum (all present on GitHub's Ubuntu runners).
 # release.yml uploads exactly the files named in SHA256SUMS.txt plus SHA256SUMS.txt itself.
 set -euo pipefail
@@ -53,7 +53,7 @@ build_archives() {
     # shellcheck disable=SC2064 # expand now: $stage is local
     trap "rm -rf '$stage'" EXIT
     mkdir "$stage/$NAME"
-    cp -r "$ROOT/src" "$ROOT/scripts" "$ROOT/install.sh" "$ROOT/package.json" "$ROOT/README.md" \
+    cp -r "$ROOT/src" "$ROOT/scripts" "$ROOT/install.sh" "$ROOT/package.json" "$ROOT/README.md" "$ROOT/LICENSE" \
         "$ROOT/config.example.json" "$ROOT/.env.example" "$stage/$NAME/"
     chmod 755 "$stage/$NAME"/install.sh "$stage/$NAME"/scripts/*.sh
     # Stamp the version into the built package.json only (the first "version" line, the top-level one).

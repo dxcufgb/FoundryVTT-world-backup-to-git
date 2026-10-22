@@ -12,7 +12,7 @@ the worlds table replaces the proxy's modules table.
 - `src/server.js` – `createApp(...)` wires everything: the backups, the scheduler, the admin page, the daily token check
   (`startDailyChecks`, off with `DAILY_CHECK=off`: a refused or soon-expiring token is mailed every day it lasts plus
   one "OK again" mail), "Test setup" (`testSetup`: token, git, data folder, state folder, Foundry `/api/status`, the
-  release repository, every enabled world's repository) and "Update now" (`serviceUpdate`: Linux `fileUpdateTrigger`
+  release repository (public: looked up without the token first, never 'bad'), every enabled world's repository) and "Update now" (`serviceUpdate`: Linux `fileUpdateTrigger`
   rewrites `update-request`, which the installer's systemd path unit watches; Windows `taskUpdateTrigger` runs the
   SYSTEM task `FoundryWorldBackup-UpdateNow`). `readEnv` validates the environment; `main()` only runs when executed
   directly and opens the admin listener (`createAdminServer(tls)`: HTTPS, a plain-HTTP first byte gets a 301 to
@@ -51,7 +51,9 @@ the worlds table replaces the proxy's modules table.
   and the auto-update scripts. `src/selfsigned.js` – ECDSA P-256 self-signed certificate built with `node:crypto`.
 - `src/updater.js` – self-update helper (`--check` / `--download` the latest release:
   `foundry-world-backup-<version>-linux.tar.gz` / `-windows.zip`, verified against `SHA256SUMS.txt`). Exit 0 = up to
-  date, 10 = update available/downloaded, 1 = error. Installing is left to the scripts.
+  date, 10 = update available/downloaded, 1 = error. Installing is left to the scripts. No token needed (this repository
+  is public); one from `--token-file` / `UPDATER_GITHUB_TOKEN` is used when present (a missing file = none, a 401 drops
+  it); a used-up rate limit (403/429) is a clear error.
 - `test/config.test.js` (config, scheduler, worlds), `test/backup.test.js` (the real `git` command against a local
   bare repository, a fake GitHub API), `test/admin.test.js` (admin API through `createApp`, mailer against a fake
   SMTP server, notifier, daily check, update triggers), `test/adminweb.test.js` (HTTPS admin port, host allowlist,
@@ -101,9 +103,9 @@ the worlds table replaces the proxy's modules table.
   `// nosemgrep: <rule-id>` with a reason; gitleaks: `.gitleaks.toml` with `[extend]` `useDefault = true`.
 
 ## Install on Linux and releasing
-- **Install on Linux**: `curl -fsSL https://raw.githubusercontent.com/dxcufgb/install/main/install.sh | sudo bash -s foundry-world-backup`
-  (private repo: it asks for a fine-grained token with read-only *Contents* access to this repository), or download
-  `foundry-world-backup-linux.tar.gz`, `tar xzf`, `cd foundry-world-backup-X.Y.Z`, `sudo ./install.sh`.
+- **Install on Linux**: `curl -fsSL https://raw.githubusercontent.com/dxcufgb/install/main/install.sh | sudo bash -s foundry-world-backup`,
+  or download `foundry-world-backup-linux.tar.gz`, `tar xzf`, `cd foundry-world-backup-X.Y.Z`, `sudo ./install.sh`.
+  This repository is public (MIT, `LICENSE`); the world-backup repositories the service creates stay private.
 - **Releasing**: Actions → Release → Run workflow → type the version. Fallback: publish a release `vX.Y.Z` on GitHub,
   files are attached afterwards. No version bump in the code.
 
@@ -156,7 +158,9 @@ the worlds table replaces the proxy's modules table.
   the service user; the ACL grant must never widen access for anyone but the service user; keep the systemd
   hardening (`ProtectHome=read-only`, not `true`: the data folder is usually under `/home`) and keep the scripts
   clean under shellcheck.
-- **Auto-update** stays opt-in and runs as root (Linux) / SYSTEM (Windows). Downloads must match `SHA256SUMS.txt`;
+- **Auto-update** stays opt-in and runs as root (Linux) / SYSTEM (Windows). It needs no token; an optional one
+  (updater token or the service's `GITHUB_TOKEN`) goes only to `api.github.com`, never on a command line or in a log,
+  and the installers never stop to ask for one (`--yes` never asks anything). Downloads must match `SHA256SUMS.txt`;
   only strictly newer, non-draft, non-prerelease versions install. Root/SYSTEM must never run code a non-admin
   account can change (code folder root-owned with explicit modes; Program Files on Windows). Upgrades keep the
   settings and the state; a failed install puts the previous code back.

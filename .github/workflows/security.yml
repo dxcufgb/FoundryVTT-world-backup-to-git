@@ -1,5 +1,6 @@
-# Security scans. GitHub's own secret scanning and CodeQL are not available for this private repository, so this
-# workflow runs free tools instead. Identical in every dxcufgb repository except the Dependencies job (per language).
+# Security scans. This repository is public, so GitHub's own secret scanning and CodeQL (default setup) run on it too;
+# this workflow adds the same free tools as the private repositories. Identical in every dxcufgb repository except
+# this first sentence and the Dependencies job (per language).
 # The three job names "Secrets (gitleaks)", "Code (Semgrep)" and "Dependencies" are required status checks: keep them.
 #   - Secrets (gitleaks): the whole history of the checked-out commit (only HEAD's history: other branches are
 #     fetched too, but a finding there must not fail this run), with a pinned gitleaks release binary whose SHA-256
