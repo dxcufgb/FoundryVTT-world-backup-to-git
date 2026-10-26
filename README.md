@@ -1,5 +1,7 @@
 # Foundry world backup
 
+<a href="https://dxcufgb.github.io/FVTT-dev-showcase/"><img src="https://dxcufgb.github.io/FVTT-dev-showcase/assets/img/workshop-badge.png" alt="Dxcufgb's Workshop: every Foundry VTT project, video and changelog in one place" width="650"></a>
+
 A small service that lives next to a self-hosted **Foundry VTT** server and backs every **world** up to its own
 **private GitHub repository** on a schedule. Each run is a git commit of the world folder (the files in
 `Data/worlds/<world id>`: `world.json`, the LevelDB packs, scenes, uploaded assets…) pushed to GitHub, so the full
