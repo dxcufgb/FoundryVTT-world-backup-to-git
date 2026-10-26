@@ -294,3 +294,33 @@ jobs:
             echo
             sed 's|^dist/|- |' "$RUNNER_TEMP/files.txt"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  site:
+    # Asks the Workshop site (dxcufgb/FVTT-dev-showcase) to rebuild, so the new version shows up there at once instead
+    # of at its next 6-hourly build. Needs the repository secret SITE_DISPATCH_TOKEN: a fine-grained token with access
+    # to only dxcufgb/FVTT-dev-showcase and Contents read and write. Without it this job does nothing. The release is
+    # already published when it runs, so a refused ping is only a warning.
+    name: Ask the Workshop site to rebuild
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Send the module-released dispatch
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          SITE_REPOSITORY: dxcufgb/FVTT-dev-showcase
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -uo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "No SITE_DISPATCH_TOKEN secret: the site picks the release up at its next scheduled build."
+            exit 0
+          fi
+          if gh api --method POST "repos/$SITE_REPOSITORY/dispatches" -f event_type=module-released \
+            -f "client_payload[repository]=$GITHUB_REPOSITORY" -f "client_payload[tag]=$TAG" \
+            >/dev/null 2>"$RUNNER_TEMP/site.err"; then
+            echo "Asked $SITE_REPOSITORY to rebuild."
+          else
+            echo "::warning::Could not ask $SITE_REPOSITORY to rebuild: $(head -c 300 "$RUNNER_TEMP/site.err" | tr '\n' ' ')- the site picks the release up at its next scheduled build. Check that SITE_DISPATCH_TOKEN can write Contents of $SITE_REPOSITORY and has not expired."
+          fi

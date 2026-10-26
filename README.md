@@ -350,6 +350,11 @@ release) and `SHA256SUMS.txt`, and publishes the release with a download table i
 Fallback: publish a release with a tag `vX.Y.Z` by hand; the files are attached afterwards. The version comes from
 the tag; nobody bumps `package.json` (the build stamps it into the archives).
 
+After publishing, the workflow asks the [Workshop site](https://github.com/dxcufgb/FVTT-dev-showcase) to rebuild (a
+`module-released` repository dispatch) when the repository secret `SITE_DISPATCH_TOKEN` is set: a fine-grained token
+with access to only `dxcufgb/FVTT-dev-showcase` and **Contents: Read and write**. Without it the site picks the
+release up at its next 6-hourly build; a refused ping is only a warning.
+
 ## Development
 
 - `npm test`: `node --test` over `test/*.test.js`. The backup tests run the real `git` command (git ≥ 2.31) and push
