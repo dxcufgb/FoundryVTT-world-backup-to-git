@@ -15,7 +15,10 @@ name: Claude
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-  issue_comment:
+  # zizmor flags issue_comment as dangerous because it runs with secrets on any comment. Here it is safe: the
+  # respond job only starts for owners, members and collaborators (and the action re-checks write access), it checks
+  # out the default branch without saved credentials, and no comment text reaches a run: step.
+  issue_comment: # zizmor: ignore[dangerous-triggers]
     types: [created]
   pull_request_review_comment:
     types: [created]
@@ -55,9 +58,11 @@ jobs:
 
   respond:
     name: Respond to @claude
+    # Only people with a role on the repository; the action itself also refuses commenters without write access.
     if: >-
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
+      (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
+      contains(github.event.comment.body, '@claude') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

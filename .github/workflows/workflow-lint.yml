@@ -51,3 +51,5 @@ jobs:
           advanced-security: false
           annotations: true
           min-severity: low
+          # A fixed zizmor release, so a new audit cannot turn CI red overnight; raise it on purpose.
+          version: 1.31.1
