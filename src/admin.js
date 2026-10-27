@@ -56,6 +56,7 @@ const UI_FILES = {
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/app.css': { file: 'app.css', type: 'text/css; charset=utf-8' },
   '/logo.png': { file: 'logo.png', type: 'image/png' },
+  '/favicon.png': { file: 'favicon.png', type: 'image/png' },
 };
 const SECURITY_HEADERS = {
   'Content-Security-Policy':
@@ -493,10 +494,16 @@ function createAdmin({
     const ip = clientIp(req);
     const f = failures.get(ip);
     globalFailures = globalFailures.filter((t) => t > now() - GLOBAL_WINDOW_MS);
-    if ((f && f.until > now()) || globalFailures.length >= GLOBAL_FAILURES) {
+    // A per-address lockout is a hard stop. The global flood pause never blocks a request that proves it knows
+    // the password, so failed logins from other addresses cannot lock the real administrator out.
+    if (f && f.until > now()) {
       return sendJson(res, 429, { error: 'too many failed logins; try again in a few minutes' });
     }
-    if (await verifyPassword(body.password, settings.passwordHash)) {
+    const ok = await verifyPassword(body.password, settings.passwordHash);
+    if (!ok && globalFailures.length >= GLOBAL_FAILURES) {
+      return sendJson(res, 429, { error: 'too many failed logins; try again in a few minutes' });
+    }
+    if (ok) {
       failures.delete(ip);
       const s = newSession();
       log('admin: login');

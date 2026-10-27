@@ -69,7 +69,7 @@
     $('#app-footer').hidden = false;
     $('#footer-version').hidden = true;
     $('#footer-actions').hidden = true;
-    $('#brand-logo').hidden = true;
+    $('#brand-logo').hidden = false;  // keep the logo top-left on the login screen too
     $('#login-view').hidden = false;
     document.body.classList.add('logged-out');
     document.title = 'Foundry World Backup';

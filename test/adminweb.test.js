@@ -253,8 +253,10 @@ test('too many failed logins from many addresses pause all logins', async () => 
     for (let i = 0; i < 50; i++) {
       await login('http', s.port, { password: 'wrong wrong', headers: { 'X-Forwarded-For': `203.0.113.${i}` } });
     }
-    const res = await login('http', s.port, { headers: { 'X-Forwarded-For': '198.51.100.1' } });
-    assert.equal(res.status, 429);
+    // during the flood a wrong password is refused ...
+    assert.equal((await login('http', s.port, { password: 'wrong wrong', headers: { 'X-Forwarded-For': '198.51.100.1' } })).status, 429);
+    // ... but the right one still gets in: other addresses' failures cannot lock the administrator out
+    assert.equal((await login('http', s.port, { headers: { 'X-Forwarded-For': '198.51.100.2' } })).status, 200);
   } finally {
     await s.close();
   }
