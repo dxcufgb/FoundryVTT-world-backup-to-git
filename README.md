@@ -223,7 +223,8 @@ and
 
 The footer shows the installed version, whether a newer release exists, and **Check for update**: when a newer
 release exists it asks whether to [update now](#update-now) (**Update now** / **Not now**). The login page's footer only
-has the "Built by Dxcufgb 2026" line; the top bar shows the logo once you are logged in. The login form has a fixed,
+has the "Built by Dxcufgb 2026" line; the top bar shows the logo on every page, the login page included, and its d20 is
+the browser tab's icon. The login form has a fixed,
 hidden user name (`admin`), so the browser's password manager (Chrome's too) offers to save the password and fills it
 in next time; changing the password updates the saved one. Chrome (and Edge) save and fill passwords only on pages
 whose certificate they trust: with the self-signed certificate they never offer it until you
@@ -233,7 +234,8 @@ from a real CA and on plain HTTP). A real certificate needs nothing.
 
 API rules (for scripts): every call but `POST /_admin/api/login` needs the session cookie; every change also the
 `X-CSRF-Token` header (from the login or state answer) and `Content-Type: application/json`; a request with an
-unknown `Host`/`Origin` is refused (403, DNS rebinding); five failed logins lock the address out for five minutes.
+unknown `Host`/`Origin` is refused (403, DNS rebinding); five failed logins lock the address out for five minutes, and
+more than 50 failed logins within 15 minutes from anywhere pause wrong passwords (the right password still gets in).
 Routes: `GET state`, `POST worlds/rescan`, `PUT worlds/<id>`, `POST worlds/<id>/backup` (202; 409 while queued,
 turned off or unreadable), `DELETE worlds/<id>`, `PUT settings` (`schedule`, `github`, `whenActive`, `foundry`), `POST foundry-test` (`url`
 optional: without it the address in use), `PUT token`, `POST setup-test`, `PUT notify`,

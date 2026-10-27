@@ -71,6 +71,8 @@ test('malformed configs are refused with a clear message', () => {
     ['{"whenActive":"maybe"}', /whenActive must be backup or skip/],
     ['{"worlds":{"../x":{}}}', /invalid world id/],
     ['{"worlds":{"a":{"repo":"noslash"}}}', /repo must be owner\/name/],
+    ['{"worlds":{"a":{"repo":"o/.."}}}', /repo must be owner\/name/],
+    ['{"worlds":{"a":{"repo":"o/."}}}', /repo must be owner\/name/],
     ['{"worlds":{"a":{"enabled":1}}}', /enabled must be true or false/],
     ['{"worlds":{"a":{"other":1}}}', /unknown key "other"/],
     ['{"worlds":{"__proto__":{}}}', /invalid world id/],
