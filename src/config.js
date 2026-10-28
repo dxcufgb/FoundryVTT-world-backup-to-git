@@ -6,7 +6,7 @@
 //
 //   {
 //     "schedule": { "frequency": "daily", "time": "04:00", "weekday": 0, "everyHours": 6 },
-//     "github": { "repoPrefix": "foundry-world-", "createRepos": true },
+//     "github": { "repoPrefix": "foundry-world-", "createRepos": true, "releases": false },
 //     "whenActive": "backup",
 //     "foundry": { "url": "http://localhost:30000" },
 //     "worlds": {
@@ -18,7 +18,8 @@
 // Sunday ... 6 = Saturday, at time); times are local. whenActive: what to do when Foundry has the world launched at
 // backup time, "backup" (back it up anyway, noted in the commit) or "skip" (wait for the next run). A world's
 // "schedule" or "whenActive" overrides the global one; "" / null means "use the global setting"; "repo" ""
-// means <token owner>/<repoPrefix><world id>. foundry.url: where Foundry answers /api/status (which world is active);
+// means <token owner>/<repoPrefix><world id>. github.releases: every backup commit also carries the GitHub Actions
+// workflow that builds an installable release of the world (src/templates/release-world.yml). foundry.url: where Foundry answers /api/status (which world is active);
 // absent / null = FOUNDRY_URL from the environment, "" = never ask.
 
 const fs = require('node:fs');
@@ -42,7 +43,7 @@ function defaultSchedule() {
 function defaultConfig() {
   return {
     schedule: defaultSchedule(),
-    github: { repoPrefix: 'foundry-world-', createRepos: true },
+    github: { repoPrefix: 'foundry-world-', createRepos: true, releases: false },
     whenActive: 'backup',
     foundry: { url: null },
     worlds: Object.create(null),
@@ -150,7 +151,7 @@ function parseConfig(text, source = 'config') {
   out.schedule = cleanSchedule(raw.schedule, make);
   if (raw.github !== undefined) {
     if (!isObject(raw.github)) throw make('"github" must be an object');
-    knownKeys(raw.github, ['repoPrefix', 'createRepos'], make, '"github"');
+    knownKeys(raw.github, ['repoPrefix', 'createRepos', 'releases'], make, '"github"');
     if (raw.github.repoPrefix !== undefined) {
       if (typeof raw.github.repoPrefix !== 'string' || !PREFIX_RE.test(raw.github.repoPrefix)) {
         throw make('"github": repoPrefix may only contain letters, digits, "-", "_" and "." (at most 60)');
@@ -160,6 +161,10 @@ function parseConfig(text, source = 'config') {
     if (raw.github.createRepos !== undefined) {
       if (typeof raw.github.createRepos !== 'boolean') throw make('"github": createRepos must be true or false');
       out.github.createRepos = raw.github.createRepos;
+    }
+    if (raw.github.releases !== undefined) {
+      if (typeof raw.github.releases !== 'boolean') throw make('"github": releases must be true or false');
+      out.github.releases = raw.github.releases;
     }
   }
   if (raw.whenActive !== undefined) {
@@ -205,7 +210,9 @@ function serializeConfig(config) {
     if (w.whenActive) entry.whenActive = w.whenActive;
     if (Object.keys(entry).length) worlds[id] = entry;
   }
-  const out = { schedule: config.schedule, github: config.github, whenActive: config.whenActive };
+  const github = { repoPrefix: config.github.repoPrefix, createRepos: config.github.createRepos };
+  if (config.github.releases) github.releases = true;
+  const out = { schedule: config.schedule, github, whenActive: config.whenActive };
   if (config.foundry && config.foundry.url !== null) out.foundry = { url: config.foundry.url };
   out.worlds = worlds;
   return `${JSON.stringify(out, null, 2)}\n`;

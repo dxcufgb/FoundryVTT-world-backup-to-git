@@ -32,6 +32,15 @@ test('Foundry\'s address: unset falls back to FOUNDRY_URL, "" turns the check of
   assert.equal(JSON.parse(serializeConfig(parseConfig('{}'))).foundry, undefined, 'not written while unset');
 });
 
+test('github.releases is off by default and only written to the file when on', () => {
+  assert.equal(parseConfig('{}').github.releases, false);
+  const on = parseConfig('{"github":{"releases":true}}');
+  assert.equal(on.github.releases, true);
+  assert.deepEqual(JSON.parse(serializeConfig(on)).github, { repoPrefix: 'foundry-world-', createRepos: true, releases: true });
+  assert.deepEqual(JSON.parse(serializeConfig(parseConfig('{"github":{"releases":false}}'))).github,
+    { repoPrefix: 'foundry-world-', createRepos: true });
+});
+
 test('world settings fall back to the global ones field by field', () => {
   const c = parseConfig(JSON.stringify({
     schedule: { frequency: 'weekly', weekday: 6, time: '23:30' },
@@ -68,6 +77,7 @@ test('malformed configs are refused with a clear message', () => {
     ['{"schedule":{"everyHours":5}}', /everyHours must divide 24/],
     ['{"github":{"repoPrefix":"a b"}}', /repoPrefix/],
     ['{"github":{"createRepos":"yes"}}', /createRepos must be true or false/],
+    ['{"github":{"releases":1}}', /releases must be true or false/],
     ['{"whenActive":"maybe"}', /whenActive must be backup or skip/],
     ['{"worlds":{"../x":{}}}', /invalid world id/],
     ['{"worlds":{"a":{"repo":"noslash"}}}', /repo must be owner\/name/],

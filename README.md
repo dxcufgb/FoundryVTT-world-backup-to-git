@@ -38,7 +38,7 @@ per-world settings and is written by the administration page:
 ```json
 {
   "schedule": { "frequency": "daily", "time": "04:00", "weekday": 0, "everyHours": 6 },
-  "github": { "repoPrefix": "foundry-world-", "createRepos": true },
+  "github": { "repoPrefix": "foundry-world-", "createRepos": true, "releases": false },
   "whenActive": "backup",
   "foundry": { "url": "http://localhost:30000" },
   "worlds": {
@@ -54,7 +54,8 @@ per-world settings and is written by the administration page:
   service backs every world up once right away.
 - `github.repoPrefix`: a world goes to `<token owner>/<repoPrefix><world id>` unless its own `repo` (`owner/name`)
   says otherwise. `github.createRepos`: create a missing repository (always private) on the first backup; off =
-  a missing repository is an error.
+  a missing repository is an error. `github.releases`: every backup commit also carries the workflow that builds an
+  installable release of the world (default off; see [Installable world releases](#installable-world-releases)).
 - `whenActive`: what to do when Foundry has the world launched at backup time: `backup` (back it up anyway; the
   commit message says so) or `skip` (wait for the next run). Foundry's `/api/status` tells which world is active.
 - `foundry.url`: where Foundry answers `/api/status` (http or https, no user name or password); set on the admin
@@ -275,6 +276,8 @@ again. If the browser still does not ask, the site may be on its *Never saved* l
 2. `git add -A` in the world folder with the git directory in `STATE_DIR/repos/<id>` (`GIT_DIR` and
    `GIT_WORK_TREE`; nothing is written into the world folder), then a commit when anything changed
    (`Backup of <title> (<id>) <time>`, author `Foundry world backup`). Nothing changed = no commit, still a success.
+   With `github.releases` on, the commit also holds `.github/workflows/release-world.yml`, put into git's index only
+   (marked skip-worktree so `git add -A` keeps it); the world folder never gets the file. Off removes it again.
 3. The repository is looked up on GitHub: created (private) when missing and `createRepos` is on; a repository the
    token cannot push to, or that is outside the token's account and missing, is an error.
 4. `git push` of `HEAD` to the repository's `main` branch. The token reaches git only through a credential helper in
@@ -297,11 +300,41 @@ cd /home/foundry/foundrydata/Data/worlds
 mv my-campaign my-campaign.broken              # keep the current folder
 git clone https://github.com/<you>/foundry-world-my-campaign.git my-campaign
 # an older state instead of the latest: git -C my-campaign log --oneline, then git -C my-campaign checkout <commit>
-rm -rf my-campaign/.git                        # Foundry serves the folder, so do not leave the history in it
+rm -rf my-campaign/.git my-campaign/.github    # Foundry serves the folder, so do not leave the history in it
 chown -R foundry:foundry my-campaign
 ```
 
 Start Foundry (or return to setup and launch the world). The service keeps backing the restored world up as before.
+With [releases](#installable-world-releases) on, Foundry's **Install World** with the world's manifest URL is the
+other way back (the latest backup, or any kept release).
+
+## Installable world releases
+
+Turn on **Publish releases** on the admin page's GitHub page (`github.releases`). Every backup commit then carries
+[`src/templates/release-world.yml`](src/templates/release-world.yml) as `.github/workflows/release-world.yml`, and
+GitHub Actions turns each push into a release of the world:
+
+- `world.json`: the world's manifest with `version` (`<UTC date>.<run number>`, e.g. `2026.10.28.42`), `manifest`
+  and `download` filled in, and `world.zip`: the world folder with that `world.json` at the top, ready for Foundry's
+  **Install World**. A push to `main` makes the latest release; another branch makes a pre-release.
+- Repository variables (*Settings → Secrets and variables → Actions → Variables*): `FOUNDRY_PROXY_URL` and
+  `KEEP_RELEASES` (how many releases and, separately, pre-releases to keep; default 10, `0` keeps all; the latest
+  release is never deleted and the git history keeps every backup anyway).
+
+The world repositories are private and Foundry cannot log in to GitHub, so Foundry installs through the
+[Foundry release proxy](https://github.com/dxcufgb/FoundryVTT-Private-Github-proxy):
+
+1. Give the proxy's token *Contents: read-only* on the world repositories, and add each world on its admin page (or in
+   its `config.json`) with the world id as the name and the world's own asset names:
+   `"my-campaign": { "repo": "<you>/foundry-world-my-campaign", "manifestAsset": "world.json", "zipAsset": "world.zip" }`.
+2. Set `FOUNDRY_PROXY_URL` on the world repository to the proxy's public address (`PUBLIC_BASE_URL`). The release's
+   links then point at the proxy (`<proxy>/<world id>/module.json`; the proxy serves the latest `world.json` under
+   that name) and the next backup builds a release with them.
+3. In Foundry: *Setup → Worlds → Install World* → paste `<proxy>/<world id>/module.json` (also printed in each
+   release's notes).
+
+Without `FOUNDRY_PROXY_URL` the links point at GitHub (`releases/latest/download/world.json`), which only works for a
+public repository. The workflow file is overwritten by every backup: change the template in this repository instead.
 
 ## Daily check
 

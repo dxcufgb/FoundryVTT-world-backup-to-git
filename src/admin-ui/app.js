@@ -375,6 +375,7 @@
     const form = $('#github-form');
     form.repoPrefix.value = state.settings.github.repoPrefix;
     form.createRepos.checked = state.settings.github.createRepos;
+    form.releases.checked = state.settings.github.releases === true;
   }
 
   function renderSchedule() {
@@ -549,7 +550,9 @@
     e.preventDefault();
     const form = e.currentTarget;
     try {
-      render(await call('PUT', 'settings', { github: { repoPrefix: form.repoPrefix.value.trim(), createRepos: form.createRepos.checked } }));
+      render(await call('PUT', 'settings', {
+        github: { repoPrefix: form.repoPrefix.value.trim(), createRepos: form.createRepos.checked, releases: form.releases.checked },
+      }));
       toast('GitHub settings saved.');
     } catch (err) {
       toast(err.message, true);

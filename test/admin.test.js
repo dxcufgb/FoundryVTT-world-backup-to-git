@@ -344,7 +344,7 @@ test('world and global settings are written to config.json and validated', async
     assert.equal((await s.call('PUT', 'worlds/nope', { enabled: false })).status, 404);
     assert.equal((await s.call('PUT', 'worlds/..%2Fx', { enabled: false })).status, 404);
     // the global schedule, GitHub settings and the active-world rule
-    res = await s.call('PUT', 'settings', { schedule: { frequency: 'weekly', weekday: 6, time: '23:30', everyHours: 6 }, github: { repoPrefix: 'fvtt-', createRepos: false }, whenActive: 'skip' });
+    res = await s.call('PUT', 'settings', { schedule: { frequency: 'weekly', weekday: 6, time: '23:30', everyHours: 6 }, github: { repoPrefix: 'fvtt-', createRepos: false, releases: true }, whenActive: 'skip' });
     assert.equal(res.status, 200, res.text);
     assert.equal(res.data.settings.schedule.frequency, 'weekly');
     assert.equal(res.data.settings.github.repoPrefix, 'fvtt-');
@@ -352,6 +352,8 @@ test('world and global settings are written to config.json and validated', async
     file = JSON.parse(fs.readFileSync(s.configFile, 'utf8'));
     assert.equal(file.whenActive, 'skip');
     assert.equal(file.github.createRepos, false);
+    assert.equal(file.github.releases, true);
+    assert.equal(res.data.settings.github.releases, true);
     res = await s.call('PUT', 'settings', { github: { repoPrefix: 'bad prefix' } });
     assert.equal(res.status, 400);
     assert.equal(JSON.parse(fs.readFileSync(s.configFile, 'utf8')).github.repoPrefix, 'fvtt-');

@@ -6,6 +6,10 @@
 // through a credential helper in the environment: it is never on a command line, in a URL, in a log line or in
 // the status file. Results go to <STATE_DIR>/status.json, which the administration page shows.
 //
+// With github.releases on, every commit also carries .github/workflows/release-world.yml (from src/templates), which
+// builds an installable release of the world on GitHub. It only goes into git's index (marked skip-worktree, so
+// `git add -A` leaves it alone), never into the world folder; turning the setting off removes it with the next commit.
+//
 // Runs are serialized (one world at a time; a world cannot be queued twice). Failures are e-mailed through the
 // injected `notify`, once per failed run, and one more e-mail says when a world backs up again.
 
@@ -24,6 +28,9 @@ const BRANCH = 'main';
 const GIT_USER = 'Foundry world backup';
 const GIT_EMAIL = 'foundry-world-backup@localhost';
 // The credential helper git calls for the push: the token is read from the environment of that git process.
+// The release workflow: where it goes in the repository and the template it comes from.
+const RELEASE_WORKFLOW = '.github/workflows/release-world.yml';
+const RELEASE_TEMPLATE = path.join(__dirname, 'templates', 'release-world.yml');
 const CREDENTIAL_HELPER = '!f() { echo username=x-access-token; echo "password=$FWB_GITHUB_TOKEN"; }; f';
 
 class BackupError extends Error {}
@@ -231,6 +238,14 @@ function createBackups({
     return repo;
   }
 
+  /** Puts the release workflow into the index (not the world folder) and marks it so `git add -A` keeps it. */
+  async function stageReleaseWorkflow(world) {
+    const blob = (await gitOk(world, ['hash-object', '-w', '--no-filters', '--', RELEASE_TEMPLATE], 'git hash-object')).stdout.trim();
+    if (!/^[0-9a-f]{40,64}$/.test(blob)) throw new BackupError('git hash-object returned no object id for the release workflow');
+    await gitOk(world, ['update-index', '--add', '--cacheinfo', `100644,${blob},${RELEASE_WORKFLOW}`], 'git update-index');
+    await gitOk(world, ['update-index', '--skip-worktree', '--', RELEASE_WORKFLOW], 'git update-index');
+  }
+
   /** One backup of one world; returns the status entry. Throws BackupError with a message safe to show. */
   async function backupOnce(world, { reason }) {
     const token = getToken();
@@ -248,7 +263,11 @@ function createBackups({
       fs.mkdirSync(reposDir, { recursive: true, mode: 0o700 });
       await gitOk(world, ['init', '-q', '--initial-branch', BRANCH], 'git init');
     }
+    const releases = getConfig().github.releases === true;
+    // off: drop the index-only copy first, so a file of that name in the world folder itself is still backed up
+    if (!releases) await gitOk(world, ['update-index', '--force-remove', '--', RELEASE_WORKFLOW], 'git update-index');
     await gitOk(world, ['add', '-A', '--', '.'], 'git add');
+    if (releases) await stageReleaseWorkflow(world);
     const changes = await gitOk(world, ['status', '--porcelain', '--untracked-files=no'], 'git status');
     const hasHead = (await git(world, ['rev-parse', '--verify', '-q', 'HEAD'])).code === 0;
     const changed = changes.stdout.trim() !== '' || !hasHead;
@@ -382,4 +401,4 @@ function createBackups({
   };
 }
 
-module.exports = { createBackups, loadStatus, gitDetail, BackupError, CREDENTIAL_HELPER, BRANCH };
+module.exports = { createBackups, loadStatus, gitDetail, BackupError, CREDENTIAL_HELPER, BRANCH, RELEASE_WORKFLOW, RELEASE_TEMPLATE };
