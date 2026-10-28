@@ -88,7 +88,9 @@ as narrow as possible:
    repositories** when the service may create the repositories (creation needs that), or **Only select
    repositories** with the world repositories you created yourself (`foundry-world-<world id>`, private).
 3. **Permissions → Repository permissions**: **Contents: Read and write** (push the backups) and, for creating
-   repositories, **Administration: Read and write**. Nothing else. [Automatic updates](#automatic-updates) of the
+   repositories, **Administration: Read and write**. With [Publish releases](#installable-world-releases) on, also
+   **Workflows: Read and write**: GitHub refuses a push that adds or changes a workflow file without it (a classic
+   token needs the `workflow` scope). Nothing else. [Automatic updates](#automatic-updates) of the
    service itself need no extra permission: this repository is public.
 4. Set an expiry you will remember; the admin page's **Test setup** and the daily check warn two weeks before.
 
@@ -310,7 +312,9 @@ other way back (the latest backup, or any kept release).
 
 ## Installable world releases
 
-Turn on **Publish releases** on the admin page's GitHub page (`github.releases`). Every backup commit then carries
+Turn on **Publish releases** on the admin page's GitHub page (`github.releases`), after giving the service's token
+**Workflows: Read and write** (classic token: the `workflow` scope; without it every backup push is refused and the
+backup fails with a message saying so). Every backup commit then carries
 [`src/templates/release-world.yml`](src/templates/release-world.yml) as `.github/workflows/release-world.yml`, and
 GitHub Actions turns each push into a release of the world:
 

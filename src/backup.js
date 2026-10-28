@@ -278,8 +278,16 @@ function createBackups({
       await gitOk(world, ['commit', '-q', '--no-verify', '-m', message], 'git commit');
     }
     const repo = await ensureRepo(world, token);
-    await gitOk(world, ['push', '-q', remoteUrl(repo), `HEAD:refs/heads/${BRANCH}`], 'git push',
-      { FWB_GITHUB_TOKEN: token });
+    const pushed = await git(world, ['push', '-q', remoteUrl(repo), `HEAD:refs/heads/${BRANCH}`], { FWB_GITHUB_TOKEN: token });
+    if (pushed.code !== 0) {
+      // GitHub's reason for refusing a workflow file is only in the "! [remote rejected]" line, which gitDetail drops
+      if (/refusing to allow .*workflow/i.test(`${pushed.stderr}\n${pushed.stdout}`)) {
+        throw new BackupError('git push failed: GitHub refuses the release workflow file because the token lacks ' +
+          '"Workflows: read and write" (a classic token: the workflow scope); give the token that permission or turn ' +
+          '"Publish releases" off');
+      }
+      throw new BackupError(`git push failed: ${scrub(gitDetail(pushed)) || `git exited with ${pushed.code}`}`);
+    }
     const head = (await gitOk(world, ['rev-parse', 'HEAD'], 'git rev-parse')).stdout.trim();
     s.commit = /^[0-9a-f]{40}$/.test(head) ? head : null;
     s.changed = changed;

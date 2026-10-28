@@ -157,7 +157,8 @@
             <label class="check"><input type="checkbox" name="releases"> Publish releases: each backup builds an installable world on GitHub</label>
             <small class="hint">Every backup commit then also carries <code>.github/workflows/release-world.yml</code> (never written into
               the world folder). GitHub Actions turns each push into a release with <code>world.json</code> and <code>world.zip</code> for
-              Foundry's <em>Install World</em>. The repositories are private, so Foundry installs through the Foundry release proxy; see the README.</small>
+              Foundry's <em>Install World</em>. The token then also needs <em>Workflows: read and write</em> (classic token: the
+              <code>workflow</code> scope), or GitHub refuses the backup pushes. The repositories are private, so Foundry installs through the Foundry release proxy; see the README.</small>
           </fieldset>
           <div class="buttons"><button type="submit">Save</button></div>
         </form>

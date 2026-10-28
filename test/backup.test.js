@@ -340,3 +340,22 @@ test('with releases off, a world that has never had the workflow backs up as bef
   assert.deepEqual(git(t.remote('octo/foundry-world-alpha'), 'ls-tree', '-r', '--name-only', 'main').split('\n').sort(),
     ['notes.txt', 'packs/actors.ldb', 'world.json']);
 });
+
+test('a push GitHub refuses for lack of the Workflows permission fails with a message saying what to change', async () => {
+  const t = setup({ config: '{"github":{"releases":true}}' });
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  assert.equal(t.backups.statusOf('alpha').lastResult, 'ok', t.backups.statusOf('alpha').lastError);
+  // GitHub's answer to a token without "Workflows: read and write", played by a pre-receive hook
+  const hook = path.join(t.remote('octo/foundry-world-alpha'), 'hooks', 'pre-receive');
+  fs.writeFileSync(hook, '#!/bin/sh\necho "refusing to allow a Personal Access Token to create or update workflow ' +
+    '`.github/workflows/release-world.yml` without `workflows` permission" >&2\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(t.worldFolder('alpha'), 'notes.txt'), 'changed');
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  const s = t.backups.statusOf('alpha');
+  assert.equal(s.lastResult, 'error');
+  assert.match(s.lastError, /token lacks "Workflows: read and write".*turn "Publish releases" off/);
+  assert.equal(t.mails.length, 1);
+  assert.ok(!s.lastError.includes(TOKEN));
+});
