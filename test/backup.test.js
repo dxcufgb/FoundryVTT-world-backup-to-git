@@ -7,7 +7,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
-const { createBackups, loadStatus, gitDetail } = require('../src/backup.js');
+const { createBackups, loadStatus, gitDetail, RELEASE_WORKFLOW, RELEASE_TEMPLATE } = require('../src/backup.js');
 const { parseConfig } = require('../src/config.js');
 const { createGithub, foundryStatus } = require('../src/github.js');
 
@@ -298,4 +298,64 @@ test('the GitHub helper classifies token answers and repository lookups', async 
   assert.deepEqual(await gh.repoInfo('octo/pub', TOKEN), { exists: true, private: false, canPush: true, defaultBranch: 'main' });
   assert.deepEqual(await gh.repoInfo('octo/none', TOKEN), { exists: false });
   await assert.rejects(gh.repoInfo('octo/none', 'wrong'), /rejects the token/);
+});
+
+test('with releases on, every commit carries the release workflow without it ever being written into the world folder', async () => {
+  const t = setup({ config: '{"github":{"releases":true}}' });
+  const remote = t.remote('octo/foundry-world-alpha');
+  const files = () => git(remote, 'ls-tree', '-r', '--name-only', 'main').split('\n').sort();
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  assert.equal(t.backups.statusOf('alpha').lastResult, 'ok', t.backups.statusOf('alpha').lastError);
+  assert.deepEqual(files(), [RELEASE_WORKFLOW, 'notes.txt', 'packs/actors.ldb', 'world.json'].sort());
+  assert.equal(git(remote, 'show', `main:${RELEASE_WORKFLOW}`), fs.readFileSync(RELEASE_TEMPLATE, 'utf8').trim());
+  assert.ok(!fs.existsSync(path.join(t.worldFolder('alpha'), '.github')), 'nothing written into the world folder');
+  // the next run keeps it and, with nothing else changed, makes no commit
+  const first = git(remote, 'rev-parse', 'main');
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  assert.equal(t.backups.statusOf('alpha').changed, false);
+  assert.equal(git(remote, 'rev-parse', 'main'), first);
+  // a world change keeps the workflow in the new commit
+  fs.writeFileSync(path.join(t.worldFolder('alpha'), 'notes.txt'), 'changed');
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  assert.equal(t.backups.statusOf('alpha').changed, true);
+  assert.ok(files().includes(RELEASE_WORKFLOW));
+  // turned off: the next commit removes it and leaves the world's files alone
+  t.cfg.github.releases = false;
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  assert.equal(t.backups.statusOf('alpha').lastResult, 'ok', t.backups.statusOf('alpha').lastError);
+  assert.equal(t.backups.statusOf('alpha').changed, true);
+  assert.deepEqual(files(), ['notes.txt', 'packs/actors.ldb', 'world.json']);
+  assert.ok(!fs.existsSync(path.join(t.worldFolder('alpha'), '.github')));
+});
+
+test('with releases off, a world that has never had the workflow backs up as before', async () => {
+  const t = setup();
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  assert.equal(t.backups.statusOf('alpha').lastResult, 'ok', t.backups.statusOf('alpha').lastError);
+  assert.deepEqual(git(t.remote('octo/foundry-world-alpha'), 'ls-tree', '-r', '--name-only', 'main').split('\n').sort(),
+    ['notes.txt', 'packs/actors.ldb', 'world.json']);
+});
+
+test('a push GitHub refuses for lack of the Workflows permission fails with a message saying what to change', async () => {
+  const t = setup({ config: '{"github":{"releases":true}}' });
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  assert.equal(t.backups.statusOf('alpha').lastResult, 'ok', t.backups.statusOf('alpha').lastError);
+  // GitHub's answer to a token without "Workflows: read and write", played by a pre-receive hook
+  const hook = path.join(t.remote('octo/foundry-world-alpha'), 'hooks', 'pre-receive');
+  fs.writeFileSync(hook, '#!/bin/sh\necho "refusing to allow a Personal Access Token to create or update workflow ' +
+    '`.github/workflows/release-world.yml` without `workflows` permission" >&2\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(t.worldFolder('alpha'), 'notes.txt'), 'changed');
+  t.backups.enqueue('alpha');
+  await t.backups.idle();
+  const s = t.backups.statusOf('alpha');
+  assert.equal(s.lastResult, 'error');
+  assert.match(s.lastError, /token lacks "Workflows: read and write".*turn "Publish releases" off/);
+  assert.equal(t.mails.length, 1);
+  assert.ok(!s.lastError.includes(TOKEN));
 });

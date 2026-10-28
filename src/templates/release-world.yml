@@ -1,0 +1,179 @@
+# Builds this Foundry VTT world into an installable release on every push.
+#
+# Managed by the Foundry world backup service (dxcufgb/FoundryVTT-world-backup-to-git, "Publish releases" on its
+# GitHub page): every backup commit carries this file from the service's src/templates/release-world.yml, so a change
+# made here is undone by the next backup. Change the template in the service instead.
+#
+# Each run publishes a GitHub release with two files:
+#   world.json  the world's manifest, with "version", "manifest" and "download" filled in
+#   world.zip   the world folder (world.json at the top), ready for Foundry's "Install World" button
+# A push to the default branch makes the "latest" release (the one Foundry installs and updates from); a push to any
+# other branch makes a pre-release that Foundry never picks up on its own.
+#
+# The version is <UTC date>.<run number>, e.g. 2026.10.28.42, so every build is newer than the one before it.
+#
+# Installing in Foundry: Setup -> Worlds -> Install World -> paste the manifest URL at the bottom of a release's notes.
+# These repositories are private and Foundry cannot log in to GitHub, so set the repository variable
+# FOUNDRY_PROXY_URL (Settings -> Secrets and variables -> Actions -> Variables) to the public address of your
+# Foundry release proxy (dxcufgb/FoundryVTT-Private-Github-proxy), e.g. https://proxy.example.com, and add this world
+# to the proxy with manifestAsset "world.json" and zipAsset "world.zip". The links are then
+#   <proxy>/<world id>/module.json   (the proxy serves world.json from the latest release under that path)
+# Without the variable the links point straight at GitHub, which only works for a public repository.
+#
+# KEEP_RELEASES (repository variable, default 10) is how many releases this workflow keeps; older ones and their tags
+# are deleted. The git history keeps every backup either way. Set it to 0 to keep everything.
+
+name: Release world
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions: {}
+
+# one build per branch at a time, in push order
+concurrency:
+  group: release-world-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # create releases and their tags
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Work out the version and links
+        id: meta
+        env:
+          BRANCH: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RUN_NUMBER: ${{ github.run_number }}
+          PROXY_URL: ${{ vars.FOUNDRY_PROXY_URL }}
+        run: |
+          if [[ ! -f world.json ]]; then
+            echo "::error::no world.json at the top of the repository"
+            exit 1
+          fi
+          id="$(jq -r '.id // empty' world.json)"
+          if [[ ! "$id" =~ ^[A-Za-z0-9_-]+$ ]]; then
+            echo "::error::world.json has no usable \"id\" (got '$id')"
+            exit 1
+          fi
+          version="$(date -u +%Y.%m.%d).$RUN_NUMBER"
+          if [[ "$BRANCH" == "$DEFAULT_BRANCH" ]]; then
+            tag="v$version"
+            prerelease=false
+          else
+            slug="$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-40)"
+            tag="v$version-$slug"
+            prerelease=true
+          fi
+          proxy="${PROXY_URL%/}"
+          if [[ -n "$proxy" ]]; then
+            if [[ ! "$proxy" =~ ^https?://[^[:space:]]+$ ]]; then
+              echo "::error::FOUNDRY_PROXY_URL must be an http(s) address (got '$PROXY_URL')"
+              exit 1
+            fi
+            manifest="$proxy/$id/module.json"
+            download="$proxy/$id/$tag/module.zip"
+          else
+            manifest="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/world.json"
+            download="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/world.zip"
+          fi
+          {
+            echo "id=$id"
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "prerelease=$prerelease"
+            echo "manifest=$manifest"
+            echo "download=$download"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::building $id $tag (pre-release: $prerelease)"
+
+      - name: Build world.zip and world.json
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          MANIFEST: ${{ steps.meta.outputs.manifest }}
+          DOWNLOAD: ${{ steps.meta.outputs.download }}
+        run: |
+          stage="$RUNNER_TEMP/world"
+          dist="$RUNNER_TEMP/dist"
+          rm -rf "$stage" "$dist"
+          mkdir -p "$stage" "$dist"
+          # everything in the repository except git and CI files; LevelDB LOCK files are left out (Foundry recreates them)
+          rsync -a --exclude=.git --exclude=.github --exclude=LOCK ./ "$stage/"
+          jq --arg version "$VERSION" --arg manifest "$MANIFEST" --arg download "$DOWNLOAD" \
+            '.version = $version | .manifest = $manifest | .download = $download' world.json > "$stage/world.json"
+          cp "$stage/world.json" "$dist/world.json"
+          (cd "$stage" && zip -q -r -X "$dist/world.zip" .)
+          unzip -l "$dist/world.zip" world.json > /dev/null
+          ls -l "$dist"
+          echo "DIST=$dist" >> "$GITHUB_ENV"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+          WORLD_ID: ${{ steps.meta.outputs.id }}
+          MANIFEST: ${{ steps.meta.outputs.manifest }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          title="$(jq -r '.title // .id' "$DIST/world.json")"
+          core="$(jq -r '.compatibility.verified // .coreVersion // "?"' "$DIST/world.json")"
+          system="$(jq -r '"\(.system // "?") \(.systemVersion // "")"' "$DIST/world.json")"
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            echo "**$title** (\`$WORLD_ID\`) built from \`$BRANCH\` at $GITHUB_SHA."
+            echo
+            echo "Foundry $core, system $system."
+            echo
+            echo "Install in Foundry: Setup → Worlds → **Install World** → paste this manifest URL:"
+            echo
+            echo '```'
+            echo "$MANIFEST"
+            echo '```'
+          } > "$notes"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName > /dev/null 2>&1; then
+            # a re-run of the same build: replace the files
+            gh release upload "$TAG" "$DIST/world.json" "$DIST/world.zip" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            args=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$title $TAG" --notes-file "$notes")
+            if [[ "$PRERELEASE" == true ]]; then
+              args+=(--prerelease --latest=false)
+            else
+              args+=(--latest)
+            fi
+            gh release create "$TAG" "$DIST/world.json" "$DIST/world.zip" "${args[@]}"
+          fi
+          echo "::notice::released $TAG: $MANIFEST"
+
+      - name: Delete old releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ vars.KEEP_RELEASES || '10' }}
+        run: |
+          if [[ ! "$KEEP" =~ ^[0-9]+$ ]]; then
+            echo "::warning::KEEP_RELEASES must be a number (got '$KEEP'); nothing deleted"
+            exit 0
+          fi
+          if [[ "$KEEP" == 0 ]]; then exit 0; fi
+          # only releases made by this workflow (tags v<year>.<month>.<day>.<run>...); releases and pre-releases are
+          # counted separately (branch builds never push out the default branch's), and the latest is never deleted
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,createdAt,isPrerelease,isLatest \
+            | jq -r --argjson keep "$KEEP" '
+                map(select(.tagName | test("^v[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+")))
+                | group_by(.isPrerelease)[]
+                | sort_by(.createdAt) | reverse | .[$keep:][]
+                | select(.isLatest | not) | .tagName' \
+            | while read -r old; do
+                echo "deleting $old"
+                gh release delete "$old" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY"
+              done

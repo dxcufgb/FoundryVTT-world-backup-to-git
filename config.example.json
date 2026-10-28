@@ -1,6 +1,6 @@
 {
   "schedule": { "frequency": "daily", "time": "04:00", "weekday": 0, "everyHours": 6 },
-  "github": { "repoPrefix": "foundry-world-", "createRepos": true },
+  "github": { "repoPrefix": "foundry-world-", "createRepos": true, "releases": false },
   "whenActive": "backup",
   "worlds": {
     "my-campaign": { "enabled": true, "repo": "", "schedule": null, "whenActive": "" },

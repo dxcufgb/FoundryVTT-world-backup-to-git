@@ -18,7 +18,7 @@ the worlds table replaces the proxy's modules table.
   directly and opens the admin listener (`createAdminServer(tls)`: HTTPS, a plain-HTTP first byte gets a 301 to
   https://, `/` → `/_admin/`, and a self-signed certificate (only the certificate) at `/_admin/certificate.crt`,
   which the login page links (Chrome saves no passwords on an untrusted certificate); nothing else is served).
-- `src/config.js` – `config.json`: schedule (`hourly`/`daily`/`weekly`), `github` (`repoPrefix`, `createRepos`),
+- `src/config.js` – `config.json`: schedule (`hourly`/`daily`/`weekly`), `github` (`repoPrefix`, `createRepos`, `releases`),
   `whenActive`, `foundry.url` (Foundry's address from the admin page; unset = `FOUNDRY_URL`, `""` = off), per-world
   settings (`enabled`, `repo`, `schedule`, `whenActive`; unlisted worlds get the defaults).
   `parseConfig`, `serializeConfig` (only non-default values are written), `worldRepo`, `effectiveSettings`.
@@ -26,7 +26,11 @@ the worlds table replaces the proxy's modules table.
   `world.json`), reads title/system/version, sums folder sizes (symlinks not followed).
 - `src/backup.js` – `createBackups`: the serialized run queue, one backup (`git init`/`add -A`/`status`/`commit`,
   repository lookup or creation through `src/github.js`, `git push HEAD:refs/heads/main`), `status.json` in the state
-  folder, failure / OK-again e-mails through the injected `notify`. Git gets `GIT_DIR`, `GIT_WORK_TREE`,
+  folder, failure / OK-again e-mails through the injected `notify`. With `github.releases` each commit also carries
+  `src/templates/release-world.yml` as `.github/workflows/release-world.yml` (index only, skip-worktree: the world
+  folder never gets it; off removes it), the GitHub Actions workflow that builds an installable world release
+  (`world.json` + `world.zip`) on every push, linked through the Foundry release proxy when the world repository's
+  `FOUNDRY_PROXY_URL` variable is set. Git gets `GIT_DIR`, `GIT_WORK_TREE`,
   `GIT_TERMINAL_PROMPT=0`, identity and the credential helper through `GIT_CONFIG_COUNT` variables; the token is only
   in `FWB_GITHUB_TOKEN` of the push's environment. `remoteUrl` is injectable (the tests push into a local bare repo).
 - `src/scheduler.js` – slots in local time (`lastSlot`/`nextSlot`); every minute, an enabled world whose latest slot
