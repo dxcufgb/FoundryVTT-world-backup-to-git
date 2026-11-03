@@ -1,0 +1,34 @@
+# Asks CodeRabbit to review every pull request. Identical in every dxcufgb repository that CodeRabbit reviews.
+# CodeRabbit skips automatic reviews on repositories with fewer than 10 stars, but still answers a
+# "@coderabbitai review" comment, so this workflow posts one when a pull request is opened, updated, reopened or
+# marked ready for review. CodeRabbit ignores that comment from github-actions[bot], so it is posted with the
+# repository secret CODERABBIT_TRIGGER_TOKEN: a fine-grained personal access token with Pull requests read and
+# write (setup: https://github.com/dxcufgb/foundry-module-ci#coderabbit-reviews). Without it the run only warns.
+# Drafts, bot-opened PRs (Dependabot, Renovate) and PRs from forks are skipped (they get no secrets); comment
+# "@coderabbitai review" on those by hand.
+
+name: CodeRabbit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  review:
+    name: Ask CodeRabbit for a review
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: coderabbit-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions: {} # the comment is posted with CODERABBIT_TRIGGER_TOKEN, not github.token
+    steps:
+      - uses: dxcufgb/foundry-module-ci/coderabbit@a19f0bc438600cce3e97b5aaa30402fe842ff1df # v1.2.0
+        with:
+          github-token: ${{ secrets.CODERABBIT_TRIGGER_TOKEN }}
