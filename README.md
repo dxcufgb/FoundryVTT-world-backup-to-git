@@ -1,5 +1,11 @@
 # Foundry world backup
 
+[![Latest release](https://img.shields.io/github/v/release/dxcufgb/FoundryVTT-world-backup-to-git?label=release&color=ff6400)](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/dxcufgb/FoundryVTT-world-backup-to-git/total?label=downloads&color=blue)](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/releases)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/dxcufgb)\
+[![CI](https://img.shields.io/github/actions/workflow/status/dxcufgb/FoundryVTT-world-backup-to-git/ci.yml?branch=main&label=CI)](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/dxcufgb/FoundryVTT-world-backup-to-git)](LICENSE)
+
 <a href="https://dxcufgb.github.io/FVTT-dev-showcase/"><img src="https://dxcufgb.github.io/FVTT-dev-showcase/assets/img/workshop-badge.png" alt="Dxcufgb's Workshop: every Foundry VTT project, video and changelog in one place" width="650"></a>
 
 A small service that lives next to a self-hosted **Foundry VTT** server and backs every **world** up to its own
@@ -42,47 +48,12 @@ The full guide is in the [wiki](https://github.com/dxcufgb/FoundryVTT-world-back
 - [Trusting the Certificate](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Trusting-the-Certificate): so the browser saves the admin password
 - [How a Backup Works](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/How-a-Backup-Works)
 - [Restoring a World](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Restoring-a-World)
-- [Installable World Releases](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Installable-World-Releases): install a backed-up world in Foundry
+- [Installable World Backups](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Installable-World-Backups): install a backed-up world in Foundry
 - [Notifications and Daily Check](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Notifications-and-Daily-Check)
 - [Automatic Updates](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Automatic-Updates)
 - [Configuration Reference](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Configuration-Reference): `config.json` and the environment variables
 - [Admin Page on a Public Address](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Admin-Page-on-a-Public-Address) and [Admin API](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Admin-API)
 - [Troubleshooting](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Troubleshooting)
-
-## Releases
-
-Actions → **Release** → *Run workflow* → the version (e.g. `1.2.3`; `1.2.3-rc.1` makes a pre-release). The workflow
-runs the whole CI (tests, shellcheck, PSScriptAnalyzer, a real Linux and a real Windows install), builds
-`foundry-world-backup-<version>-linux.tar.gz`, `-windows.zip` and `-setup.exe`, the fixed-name copies
-(`foundry-world-backup-linux.tar.gz` etc., so `.../releases/latest/download/<name>` always points at the newest
-release) and `SHA256SUMS.txt`, and publishes the release with a download table in front of the generated notes.
-Fallback: publish a release with a tag `vX.Y.Z` by hand; the files are attached afterwards. The version comes from
-the tag; nobody bumps `package.json` (the build stamps it into the archives).
-
-After publishing, the workflow asks the [Workshop site](https://github.com/dxcufgb/FVTT-dev-showcase) to rebuild (a
-`module-released` repository dispatch) when the repository secret `SITE_DISPATCH_TOKEN` is set: a fine-grained token
-with access to only `dxcufgb/FVTT-dev-showcase` and **Contents: Read and write**. Without it the site picks the
-release up at its next 6-hourly build; a refused ping is only a warning.
-
-## Development
-
-- `npm test`: `node --test` over `test/*.test.js`. The backup tests run the real `git` command (git ≥ 2.31) and push
-  into a local bare repository; GitHub, Foundry and SMTP are faked.
-- `shellcheck install.sh scripts/*.sh`; PSScriptAnalyzer (`Invoke-ScriptAnalyzer -Path scripts, packaging -Recurse`)
-  for the PowerShell scripts, which target Windows PowerShell 5.1.
-- Security scans as in CI: `gitleaks git --redact --log-opts="--full-history --diff-filter=tuxdb --diff-merges=first-parent HEAD" .`
-  and `semgrep scan --metrics=off --error --severity WARNING --severity ERROR --config p/python --config p/javascript
-  --config p/security-audit --config p/secrets --config p/github-actions --config r/bash`.
-- Conventions: CommonJS, `'use strict'`, no npm dependencies, 2-space indent, single quotes, semicolons; behaviour
-  changes need a test and a README edit. See `CLAUDE.md` for the review focus.
-
-## Branch protection
-
-`main` is protected by the **Protect main** ruleset (`.github/ruleset-protect-main.json`, applied through the
-GitHub API/UI): no deletion or force push, changes through pull requests merged with squash, one approval, and the
-CI and security jobs as required status checks. Release tags `v*` are protected by **Protect release tags**
-(`.github/ruleset-protect-release-tags.json`): no deletion, update or force push. Keep the check names in the ruleset
-in step with the job names in `ci.yml` and `security.yml`.
 
 ## License
 
