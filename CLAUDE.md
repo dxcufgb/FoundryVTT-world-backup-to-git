@@ -122,7 +122,7 @@ the worlds table replaces the proxy's modules table.
   `HttpError` → its status on the admin API, anything else → 500 "internal error".
 - Logging is one plain line through the injected `log`, prefixed with the world id (`admin:`, `scheduler:`,
   `daily check:` otherwise).
-- Behaviour changes need a test and matching README edits (the README documents settings, the page, the API and the
+- Behaviour changes need a test and matching wiki edits (the wiki documents settings, the page, the API and the
   installers).
 
 ## Review focus

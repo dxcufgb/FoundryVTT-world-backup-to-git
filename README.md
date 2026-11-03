@@ -48,7 +48,7 @@ The full guide is in the [wiki](https://github.com/dxcufgb/FoundryVTT-world-back
 - [Trusting the Certificate](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Trusting-the-Certificate): so the browser saves the admin password
 - [How a Backup Works](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/How-a-Backup-Works)
 - [Restoring a World](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Restoring-a-World)
-- [Installable World Releases](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Installable-World-Releases): install a backed-up world in Foundry
+- [Installable World Backups](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Installable-World-Backups): install a backed-up world in Foundry
 - [Notifications and Daily Check](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Notifications-and-Daily-Check)
 - [Automatic Updates](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Automatic-Updates)
 - [Configuration Reference](https://github.com/dxcufgb/FoundryVTT-world-backup-to-git/wiki/Configuration-Reference): `config.json` and the environment variables
