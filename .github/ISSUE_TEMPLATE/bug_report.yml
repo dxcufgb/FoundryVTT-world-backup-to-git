@@ -1,14 +1,43 @@
 name: Bug report
 description: The service, its admin page or one of its installers does not behave as expected.
+title: "[Bug]: "
 labels: [bug]
 body:
-  - type: textarea
-    id: what
+  - type: input
+    id: foundry-version
     attributes:
-      label: What happened?
-      description: What you did, what you expected, and what happened instead.
+      label: Foundry VTT version
+      placeholder: e.g. 13.348
     validations:
       required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exactly what you did, step by step, so the bug can be seen again.
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead?
+    validations:
+      required: true
+
   - type: input
     id: version
     attributes:
@@ -16,6 +45,7 @@ body:
       placeholder: "1.0.0"
     validations:
       required: true
+
   - type: dropdown
     id: os
     attributes:
@@ -23,16 +53,13 @@ body:
       options: [Linux, Windows, Other]
     validations:
       required: true
+
   - type: dropdown
     id: install
     attributes:
       label: How it was installed
       options: [install.sh, Windows installer (.exe), install-service.ps1, Run by hand, Other]
-  - type: input
-    id: foundry-version
-    attributes:
-      label: Foundry VTT version
-      placeholder: "13.348"
+
   - type: textarea
     id: log
     attributes:
@@ -41,3 +68,11 @@ body:
         `journalctl -u foundry-world-backup -n 50` (Linux) or
         `C:\ProgramData\FoundryWorldBackup\logs\service.log` (Windows). Remove your GitHub token before pasting.
       render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the existing issues and this hasn't been reported yet.
+          required: true
