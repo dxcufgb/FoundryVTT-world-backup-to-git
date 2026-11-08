@@ -8,8 +8,8 @@
 #              pushing more commits ask for a fresh one with "@claude review".
 #              Project rules for the reviewer are in CLAUDE.md.
 #   - respond: mention @claude in a PR or issue comment (or a PR review comment) to ask a
-#              question or request a change. Only users with write access can trigger it; comments
-#              from bots never do.
+#              question or request a change. Any comment that mentions @claude and is not from a
+#              bot starts the job; claude-code-action then refuses commenters without write access.
 
 name: Claude
 
