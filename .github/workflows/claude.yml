@@ -8,7 +8,8 @@
 #              pushing more commits ask for a fresh one with "@claude review".
 #              Project rules for the reviewer are in CLAUDE.md.
 #   - respond: mention @claude in a PR or issue comment (or a PR review comment) to ask a
-#              question or request a change. Only users with write access can trigger it.
+#              question or request a change. Only users with write access can trigger it; comments
+#              from bots never do.
 
 name: Claude
 
@@ -59,10 +60,14 @@ jobs:
   respond:
     name: Respond to @claude
     # Only people with a role on the repository; the action itself also refuses commenters without write access.
+    # Bot comments are skipped: contains() ignores case, so a bot quoting "@CLAUDE.md" (CodeRabbit does) would start
+    # the job, and claude-code-action refuses bot actors, which fails the run.
     if: >-
-      (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
-      contains(github.event.comment.body, '@claude') &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      github.event.comment.user.type != 'Bot' && (
+        (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
