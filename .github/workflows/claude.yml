@@ -11,10 +11,10 @@ name: Claude
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-  # zizmor flags issue_comment as dangerous because it runs with secrets on any comment. Here the respond job
-  # only reacts to "@claude" from the owner, members and collaborators, claude-code-action refuses commenters
-  # without write access, and the checkout is the default branch without persisted credentials, so no untrusted
-  # code runs with the token.
+  # zizmor flags issue_comment as dangerous because it runs with secrets on any comment. Here it runs the
+  # default branch's workflow, the respond job only reacts to "@claude" from the owner, members and
+  # collaborators, and claude-code-action refuses commenters without write access, so only people who can
+  # already push to the repository start it with the token.
   issue_comment: # zizmor: ignore[dangerous-triggers]
     types: [created]
   pull_request_review_comment:
@@ -31,6 +31,6 @@ jobs:
       issues: write
       id-token: write
       actions: read
-    uses: dxcufgb/foundry-module-ci/.github/workflows/claude-reusable.yml@e048b845e79b232b84661f61b3ded6364b5bec21 # v1.3.0
+    uses: dxcufgb/foundry-module-ci/.github/workflows/claude-reusable.yml@41ae9dd67c16b5540248c6c5dc06d6442eb93814 # v1.3.1
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
