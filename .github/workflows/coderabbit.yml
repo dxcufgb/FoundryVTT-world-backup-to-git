@@ -29,6 +29,6 @@ jobs:
       cancel-in-progress: true
     permissions: {} # the comment is posted with CODERABBIT_TRIGGER_TOKEN, not github.token
     steps:
-      - uses: dxcufgb/foundry-module-ci/coderabbit@642249c2b44f1071668474694cbfee13a47959b2 # v1.2.0
+      - uses: dxcufgb/foundry-module-ci/coderabbit@41ae9dd67c16b5540248c6c5dc06d6442eb93814 # v1.3.1
         with:
           github-token: ${{ secrets.CODERABBIT_TRIGGER_TOKEN }}
